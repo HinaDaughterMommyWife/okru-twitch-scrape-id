@@ -1,0 +1,13 @@
+services:
+  scrapling:
+    image: pyd4vinci/scrapling:latest
+    container_name: scrapling
+    working_dir: /app/scripts
+    volumes:
+      - ./scripts:/app/scripts
+      - ./output:/app/output
+    environment:
+      - PYTHONUNBUFFERED=1
+    entrypoint: ["uv", "run", "python"]
+    command: ["scrape_okru.py"]
+    restart: "no"
