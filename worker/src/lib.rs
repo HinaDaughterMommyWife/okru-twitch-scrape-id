@@ -115,6 +115,7 @@ async fn handle_get(req: Request, ctx: RouteContext<()>) -> Result<Response> {
         Some(value) => {
             let mut resp = Response::ok(value)?;
             resp.headers_mut().set("Content-Type", "application/json")?;
+            resp.headers_mut().set("Cache-Control", "no-store")?;
             Ok(resp)
         }
         None => json_response(

@@ -57,6 +57,7 @@ def send_post(streaming_id):
         headers={
             "Content-Type": "application/json",
             "Authorization": f"Basic {credentials}",
+            "User-Agent": "okru-scraper/1.0",
         },
         method="POST",
     )
