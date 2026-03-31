@@ -1,5 +1,9 @@
 # okru-scraping
 
+<div align="center">
+<img src="resource/hina.webp" width="600" />
+</div>
+
 Automatically detects active ok.ru live streams and serves them through a simple web interface with an embedded Twitch chat.
 
 Built for [thedarkraimola](https://www.twitch.tv/thedarkraimola).
