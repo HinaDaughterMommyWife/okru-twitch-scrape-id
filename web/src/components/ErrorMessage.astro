@@ -1,0 +1,12 @@
+---
+interface Props {
+  message: string;
+}
+
+const { message } = Astro.props;
+---
+
+<div class="flex h-full flex-col items-center justify-center gap-3">
+  <img src="/hikari.webp" alt="hikari" class="w-48 opacity-40 select-none pointer-events-none" style="filter: grayscale(60%)" />
+  <p class="text-red-400">Error: {message}</p>
+</div>

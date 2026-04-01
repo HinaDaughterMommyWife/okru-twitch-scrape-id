@@ -1,0 +1,35 @@
+<div
+  id="brave-toast"
+  class="pointer-events-none fixed bottom-4 left-1/2 z-50 hidden w-[90%] -translate-x-1/2 opacity-0 transition-opacity duration-300 md:w-auto md:left-auto md:right-4 md:translate-x-0"
+>
+  <div class="pointer-events-auto flex items-center gap-0.5 rounded-lg bg-yellow-500 px-4 py-3 text-sm font-medium text-black shadow-lg md:gap-2">
+    <span>Desactiva los escudos de Brave para usar el chat, perdón xd 🛡️</span>
+    <button id="brave-toast-close" class="ml-px cursor-pointer text-black/60 hover:text-black" aria-label="Cerrar">&times;</button>
+  </div>
+</div>
+
+<script>
+  function hideToast() {
+    const toast = document.getElementById("brave-toast");
+    if (!toast) return;
+    toast.classList.remove("opacity-100");
+    toast.classList.add("opacity-0");
+    setTimeout(() => toast.classList.add("hidden"), 300);
+  }
+
+  if ((navigator as any).brave && typeof (navigator as any).brave.isBrave === "function") {
+    (navigator as any).brave.isBrave().then((isBrave: boolean) => {
+      if (!isBrave) return;
+      const key = "brave_toast_count";
+      const count = parseInt(localStorage.getItem(key) ?? "0", 10);
+      if (count >= 5) return;
+      localStorage.setItem(key, String(count + 1));
+      const toast = document.getElementById("brave-toast");
+      if (!toast) return;
+      toast.classList.remove("hidden", "opacity-0");
+      toast.classList.add("opacity-100");
+      setTimeout(hideToast, 10000);
+      document.getElementById("brave-toast-close")?.addEventListener("click", hideToast);
+    });
+  }
+</script>

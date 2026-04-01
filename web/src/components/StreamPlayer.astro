@@ -1,0 +1,32 @@
+---
+interface Props {
+  streamingId: string;
+  hostname: string;
+}
+
+const { streamingId, hostname } = Astro.props;
+---
+
+<div class="flex h-full flex-col md:flex-row">
+  {/* Video ok.ru */}
+  <div class="w-full shrink-0 aspect-video md:aspect-auto md:h-full md:flex-1">
+    <iframe
+      title={`video-${streamingId}`}
+      class="h-full w-full border-0"
+      src={`//ok.ru/videoembed/${streamingId}?nochat=1&autoplay=1`}
+      allow="autoplay"
+      allowfullscreen
+    ></iframe>
+  </div>
+
+  {/* Twitch chat */}
+  <div class="min-h-0 w-full flex-1 md:h-full md:flex-none md:w-85" style="padding-bottom: env(safe-area-inset-bottom)">
+    <iframe
+      id="twitch-chat-embed"
+      title="chat"
+      class="h-full w-full border-0"
+      src={`https://www.twitch.tv/embed/thedarkraimola/chat?darkpopout&parent=${hostname}`}
+      referrerpolicy="no-referrer-when-downgrade"
+    ></iframe>
+  </div>
+</div>

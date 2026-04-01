@@ -14,6 +14,7 @@ RETRY_DELAY = 10      # seconds between retries
 POST_URL = "https://httpbin.org/post"  # replace with: https://okru-worker.<subdomain>.workers.dev/streaming
 AUTH_TOKEN = "changeme"  # must match the AUTH_TOKEN secret in the worker
 
+_last_posted_streaming_id = None
 
 def find_active_live_link(page):
     cards = page.css(".video-card.js-movie-card")
@@ -106,6 +107,8 @@ def is_page_valid(page):
 
 
 def check_once():
+    global _last_posted_streaming_id
+
     print(f"Fetching: {URL}")
     page = fetch_page_with_retries()
 
@@ -124,15 +127,19 @@ def check_once():
 
     if href:
         streaming_id = extract_streaming_id(href)
-        if streaming_id:
-            print(f"  Active live stream: {streaming_id}")
-            send_post(streaming_id)
-        else:
+        if not streaming_id:
             print(f"  href found but could not extract ID: {href}")
-            send_post("NOT_FOUND")
+            streaming_id = "NOT_FOUND"
     else:
-        print("  No active live stream found -- sending NOT_FOUND")
-        send_post("NOT_FOUND")
+        print("  No active live stream found")
+        streaming_id = "NOT_FOUND"
+
+    if streaming_id == _last_posted_streaming_id:
+        print(f"  Streaming ID unchanged ({streaming_id}) -- skipping POST")
+    else:
+        print(f"  Streaming ID changed: {_last_posted_streaming_id} -> {streaming_id}")
+        send_post(streaming_id)
+        _last_posted_streaming_id = streaming_id
 
     return href
 

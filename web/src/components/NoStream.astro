@@ -1,0 +1,50 @@
+---
+interface Props {
+  updatedAt: string | null;
+}
+
+const { updatedAt } = Astro.props;
+---
+
+<div class="flex h-full flex-col items-center justify-center gap-3">
+  <img src="/hikari.webp" alt="hikari" class="w-40 opacity-40 select-none pointer-events-none" style="filter: grayscale(50%)" />
+  <p class="text-gray-400">No hay Stream</p>
+  {updatedAt && (
+    <p class="text-sm text-gray-500">
+      Siguiente Revisión en: <span id="countdown" data-base={new Date(updatedAt).getTime()}>00:00</span>
+    </p>
+  )}
+</div>
+
+<script>
+  const INTERVAL_MS = 5 * 60 * 1000;
+  const BUFFER_MS = 10 * 1000; // extra 10s for scraper to save data
+  const el = document.getElementById("countdown");
+  if (el) {
+    const base = parseInt(el.dataset.base ?? "0", 10);
+
+    function getNext(): number {
+      const now = Date.now();
+      const elapsed = now - base;
+      const intervals = Math.floor(elapsed / INTERVAL_MS);
+      return base + (intervals + 1) * INTERVAL_MS + BUFFER_MS;
+    }
+
+    let next = getNext();
+
+    function tick() {
+      const remaining = next - Date.now();
+      if (remaining <= 0) {
+        window.location.reload();
+        return;
+      }
+      const totalSecs = Math.ceil(remaining / 1000);
+      const mins = Math.floor(totalSecs / 60).toString().padStart(2, "0");
+      const secs = (totalSecs % 60).toString().padStart(2, "0");
+      el!.textContent = `${mins}:${secs}`;
+    }
+
+    tick();
+    setInterval(tick, 1000);
+  }
+</script>
