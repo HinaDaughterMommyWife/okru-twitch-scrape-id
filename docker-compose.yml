@@ -10,4 +10,4 @@ services:
       - PYTHONUNBUFFERED=1
     entrypoint: ["uv", "run", "python"]
     command: ["scrape_okru.py"]
-    restart: "no"
+    restart: "unless-stopped"
