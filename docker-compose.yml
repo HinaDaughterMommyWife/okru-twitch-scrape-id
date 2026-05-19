@@ -1,13 +1,38 @@
 services:
-  scrapling:
-    image: pyd4vinci/scrapling:latest
-    container_name: scrapling
-    working_dir: /app/scripts
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflare_tunnel
+    network_mode: "host"
+    command: tunnel --no-autoupdate --url http://localhost:9622/
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: okru_backend
+    network_mode: "host"
+    env_file:
+      - ./backend/.env
     volumes:
-      - ./scripts:/app/scripts
-      - ./output:/app/output
-    environment:
-      - PYTHONUNBUFFERED=1
-    entrypoint: ["uv", "run", "python"]
-    command: ["scrape_okru.py"]
-    restart: "unless-stopped"
+      - ./backend/data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9622/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  debug:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: okru_debug
+    network_mode: "host"
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend/data:/app/data
+    entrypoint: ["uv", "run", "python", "debug_check.py"]
+    profiles:
+      - debug

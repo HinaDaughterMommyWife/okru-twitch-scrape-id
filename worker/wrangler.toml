@@ -8,3 +8,4 @@ command = "worker-build --release"
 [[kv_namespaces]]
 binding = "OKRU_ID"
 id = "4f68896d122b4575af79963482b3bba8"
+preview_id = "4f68896d122b4575af79963482b3bba8"

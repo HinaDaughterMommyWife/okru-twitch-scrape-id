@@ -13,6 +13,7 @@ worker/build/
 .env
 .env.*
 !.env.example
+!.dev.vars.example
 
 # logs
 *.log
@@ -34,3 +35,35 @@ Thumbs.db
 .wrangler/
 .dev.vars
 worker-configuration.d.ts
+
+# python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.uv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# backend data (credentials, runtime files)
+backend/data/
+backend/.tio.tokens.json
+
+# output (scrapling artifacts)
+output/
+
+# error logs from check_docker.sh
+error-docker/
+
+# pm2 logs
+logs/
+
+# agents
+.agents/
+skills-lock.json
+

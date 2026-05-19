@@ -12,9 +12,12 @@ import BraveToast from "../components/BraveToast.astro";
 const workerUrl = env.WORKER_URL ?? "";
 const authToken = env.WORKER_AUTH_TOKEN ?? "";
 
+Astro.response.headers.set("Cache-Control", "public, s-maxage=5");
+
 const url = new URL(Astro.request.url);
 const queryId = url.searchParams.get("id");
 const hostname = url.hostname;
+const isDev = hostname === "localhost" || hostname === "127.0.0.1";
 
 let streamingId: string | null = null;
 let updatedAt: string | null = null;
@@ -33,6 +36,9 @@ if (queryId) {
       result.data.streaming_id !== "NOT_FOUND"
         ? result.data.streaming_id
         : null;
+  } else if (result.error === "no streaming id stored yet") {
+    // KV vacío — tratar como no stream, usar timestamp actual como base
+    updatedAt = new Date(Date.now() - 10_000).toISOString();
   } else {
     errorMessage = result.error;
   }
@@ -45,6 +51,7 @@ if (queryId) {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" href="/favicon.ico" />
     <title>SapoPerro Ruso</title>
+    <script defer src="https://assets.onedollarstats.com/stonks.js" data-debug={isDev ? "watch.shonensemanal.site" : undefined}></script>
   </head>
   <body class="m-0 h-dvh w-screen overflow-hidden bg-[#0e0e10] text-white">
     {errorMessage && <ErrorMessage message={errorMessage} />}
