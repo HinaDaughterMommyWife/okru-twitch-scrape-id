@@ -48,7 +48,7 @@ def _make_router():
         _oauth_state = secrets.token_urlsafe(32)
         params = urllib.parse.urlencode({
             "client_id": settings.TWITCH_CLIENT_ID,
-            "redirect_uri": f"http://localhost:{settings.PORT}/{key}/callback",
+                "redirect_uri": f"{settings.BASE_URL}/{key}/callback",
             "response_type": "code",
             "scope": "chat:read chat:edit user:bot user:read:chat user:write:chat",
             "state": _oauth_state,
@@ -69,7 +69,7 @@ def _make_router():
                 "client_secret": settings.TWITCH_CLIENT_SECRET,
                 "code": code,
                 "grant_type": "authorization_code",
-                "redirect_uri": f"http://localhost:{settings.PORT}/{key}/callback",
+            "redirect_uri": f"{settings.BASE_URL}/{key}/callback",
             })
         if resp.status_code != 200:
             raise HTTPException(status_code=502, detail=f"Twitch token exchange failed: {resp.text}")

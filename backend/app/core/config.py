@@ -28,6 +28,7 @@ class Settings:
     POST_AUTH_TOKEN: str = os.environ["POST_AUTH_TOKEN"]
 
     PORT: int = int(os.getenv("PORT", "9622"))
+    BASE_URL: str = os.getenv("BASE_URL", f"http://localhost:{int(os.getenv('PORT', '9622'))}")
 
     # Paths
     DATA_DIR: Path = Path(__file__).resolve().parent.parent.parent / "data"
