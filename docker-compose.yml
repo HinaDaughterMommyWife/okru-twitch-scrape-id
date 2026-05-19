@@ -1,7 +1,7 @@
 services:
   tunnel:
     image: cloudflare/cloudflared:latest
-    container_name: cloudflare_tunnel
+    container_name: cloudflare_tunnel_okru
     network_mode: "host"
     command: tunnel --no-autoupdate --url http://localhost:9622/
     restart: unless-stopped
@@ -33,6 +33,6 @@ services:
       - ./backend/.env
     volumes:
       - ./backend/data:/app/data
-    entrypoint: ["uv", "run", "python", "debug_check.py"]
+    entrypoint: ["python", "debug_check.py"]
     profiles:
       - debug

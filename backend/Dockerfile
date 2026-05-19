@@ -8,9 +8,10 @@ COPY app/ app/
 COPY run.py .
 COPY debug_check.py .
 
-# Install dependencies via uv (already in scrapling base image)
-RUN uv pip install --system fastapi "uvicorn[standard]" python-dotenv twitchio httpx
+# Install dependencies
+RUN pip install --no-cache-dir fastapi "uvicorn[standard]" python-dotenv twitchio httpx curl_cffi
 
 EXPOSE 9622
 
-CMD ["uv", "run", "python", "run.py"]
+ENTRYPOINT ["python"]
+CMD ["run.py"]
