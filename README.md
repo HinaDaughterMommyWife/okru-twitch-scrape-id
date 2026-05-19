@@ -10,9 +10,9 @@ Built for [thedarkraimola](https://www.twitch.tv/thedarkraimola).
 
 ## Components
 
-- **`scripts/`** — Python scraper that monitors an ok.ru profile for active live streams. When one is found, it extracts the streaming ID and posts it to the worker API. Runs in Docker via Scrapling.
-- **`worker/`** — Cloudflare Worker (Rust) that stores and serves the current streaming ID using KV. Protected with Basic Auth.
-- **`web/`** — Astro site deployed on Cloudflare Workers. Fetches the streaming ID from the worker and renders the ok.ru video embed alongside a Twitch chat iframe.
+- **`backend/`** — FastAPI server that runs a Twitch bot (twitchio v3 EventSub). When a mod writes `#okru` in chat, it scrapes the ok.ru profile (fast stdlib scraper → Scrapling headless fallback) and posts the result to the worker.
+- **`worker/`** — Cloudflare Worker (Rust) that stores and serves the latest streaming ID and timestamp using KV. Protected with Basic Auth.
+- **`web/`** — Astro SSR site on Cloudflare Workers. Fetches the streaming ID from the worker and renders the ok.ru embed with a Twitch chat iframe.
 
 ## Setup
 
