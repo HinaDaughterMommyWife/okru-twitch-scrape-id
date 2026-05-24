@@ -1,22 +1,18 @@
 ---
 interface Props {
-  updatedAt: string | null;
 }
-
-const { updatedAt } = Astro.props;
 ---
 
 <div class="flex h-full flex-col items-center justify-center gap-3">
   <img src="/sleep.webp" alt="hikari" class="w-40 opacity-40 select-none pointer-events-none" style="filter: grayscale(50%)" />
   <p class="text-gray-400">No hay Stream</p>
-  {updatedAt && (
-    <div class="flex flex-col text-center gap-1">
-      <p class="text-sm text-gray-500">Pide a un Mod o al SapoPerro que escriba <code class="bg-gray-800 text-gray-200 rounded px-1 py-0.5 font-mono text-xs">#okru</code> en el chat de <strong class="twitch-glow font-bold">Twitch</strong></p>
-      <p class="text-sm text-gray-500">
-      Siguiente Revisión en: <span id="countdown" data-base={new Date(updatedAt).getTime()}>00:00</span>
+  <div class="flex flex-col text-center gap-1">
+    <p class="text-sm text-gray-500">Pidele a un Mod o al SapoPerro que escriba <code class="bg-gray-800 text-gray-200 rounded px-1 py-0.5 font-mono text-xs">#okru</code> en el chat de <strong class="twitch-glow font-bold">Twitch</strong></p>
+    <p class="text-xs text-gray-600 mb-1"><code class="bg-gray-800/90 text-gray-100 border border-gray-700 rounded px-1.5 py-0.5 font-mono text-[11px]">#okru</code> solo lo pueden usar moderadores</p>
+    <p class="text-sm text-gray-500">
+      Esta pagina se refrescara automaticamente en <span id="countdown">01:00</span>
     </p>
-    </div>
-  )}
+  </div>
 </div>
 
 <style>
@@ -36,23 +32,14 @@ const { updatedAt } = Astro.props;
 </style>
 
 <script>
-  const INTERVAL_MS = 5 * 60 * 1000;
-  const BUFFER_MS = 10 * 1000; // extra 10s for scraper to save data
+  const INTERVAL_MS = 60 * 1000;
   const el = document.getElementById("countdown");
-  if (el) {
-    const base = parseInt(el.dataset.base ?? "0", 10);
-
-    function getNext(): number {
-      const now = Date.now();
-      const elapsed = now - base;
-      const intervals = Math.floor(elapsed / INTERVAL_MS);
-      return base + (intervals + 1) * INTERVAL_MS + BUFFER_MS;
-    }
-
-    let next = getNext();
+  if (el instanceof HTMLElement) {
+    const startedAt = Date.now();
 
     function tick() {
-      const remaining = next - Date.now();
+      const elapsed = Date.now() - startedAt;
+      const remaining = INTERVAL_MS - elapsed;
       if (remaining <= 0) {
         window.location.reload();
         return;

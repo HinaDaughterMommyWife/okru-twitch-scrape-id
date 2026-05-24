@@ -9,7 +9,7 @@ COPY run.py .
 COPY debug_check.py .
 
 # Install dependencies
-RUN pip install --no-cache-dir fastapi "uvicorn[standard]" python-dotenv twitchio httpx curl_cffi
+RUN pip install --no-cache-dir fastapi "uvicorn[standard]" python-dotenv "twitchio>=2.10.0,<3.0.0" httpx curl_cffi
 
 EXPOSE 9622
 

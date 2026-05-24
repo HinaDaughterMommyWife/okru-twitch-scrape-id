@@ -37,7 +37,6 @@ if (queryId) {
         ? result.data.streaming_id
         : null;
   } else if (result.error === "no streaming id stored yet") {
-    // KV vacío — tratar como no stream, usar timestamp actual como base
     updatedAt = new Date(Date.now() - 10_000).toISOString();
   } else {
     errorMessage = result.error;
@@ -56,7 +55,7 @@ if (queryId) {
   <body class="m-0 h-dvh w-screen overflow-hidden bg-[#0e0e10] text-white">
     {errorMessage && <ErrorMessage message={errorMessage} />}
 
-    {!errorMessage && !streamingId && <NoStream updatedAt={updatedAt} />}
+    {!errorMessage && !streamingId && <NoStream />}
 
     {streamingId && <StreamPlayer streamingId={streamingId} hostname={hostname} />}
 

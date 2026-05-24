@@ -99,9 +99,13 @@ class _VideoCardParser(HTMLParser):
         if self._in_card:
             self._depth += 1
             if tag == "a":
+                classes = self._classes(attrs)
                 for name, val in attrs:
                     if name == "href":
-                        self._card_href = val
+                        if "video-card_lk" in classes:
+                            self._card_href = val
+                        elif self._card_href is None and val != "#":
+                            self._card_href = val
             if {"video-card_live", "__active"}.issubset(classes):
                 self._active_in_current_card = True
 

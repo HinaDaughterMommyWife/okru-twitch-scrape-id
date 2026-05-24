@@ -11,5 +11,11 @@
 	},
 	"observability": {
 		"enabled": true
-	}
+	},
+	"routes": [
+		{
+			"pattern": "watch.shonensemanal.site/*",
+			"zone_name": "shonensemanal.site"
+		}
+	]
 }

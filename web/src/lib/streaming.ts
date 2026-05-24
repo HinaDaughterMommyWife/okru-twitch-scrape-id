@@ -17,8 +17,6 @@ export async function fetchStreamingId(
 ): Promise<StreamingResult> {
   const credentials = btoa(`admin:${authToken}`);
 
-  console.log('credentials', credentials);
-
   const res = await fetch(`${workerUrl}/streaming`, {
     headers: {
       Authorization: `Basic ${credentials}`,
