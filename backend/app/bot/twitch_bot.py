@@ -4,28 +4,52 @@ Twitch bot via twitchio v2 (IRC).
 - Handles #okru from mods/broadcaster/whitelist
 - Undebounce: first call fires, subsequent ignored until done or 40s
 - Handles: emote-only, slow mode, chat-disabled silently
+- Auto token refresh every 3h via Twitch OAuth
 """
 
 import asyncio
 import logging
 import time
 
+import httpx
 import twitchio
 from twitchio.ext import commands
 
 from app.core.config import settings
-from app.services.credentials import load_credentials
+from app.services.credentials import load_credentials, save_credentials
 
 logger = logging.getLogger("okru.bot")
 
 _SLOW_MODE_DEFAULT = 5.0
 _DEBOUNCE_WINDOW = 40.0
+_TOKEN_REFRESH_INTERVAL = 3 * 60 * 60 # 3 hours
 
 _bot_instance: "OkruBot | None" = None
 
 
+async def _do_token_refresh(refresh_token: str) -> tuple[str, str] | None:
+    """Exchange refresh_token for new access+refresh tokens. Returns (access, refresh) or None on failure."""
+    try:
+        async with httpx.AsyncClient() as http:
+            r = await http.post(
+                "https://id.twitch.tv/oauth2/token",
+                data={
+                    "grant_type": "refresh_token",
+                    "refresh_token": refresh_token,
+                    "client_id": settings.TWITCH_CLIENT_ID,
+                    "client_secret": settings.TWITCH_CLIENT_SECRET,
+                },
+            )
+            r.raise_for_status()
+            data = r.json()
+            return data["access_token"], data["refresh_token"]
+    except Exception as e:
+        logger.error("Token refresh failed: %s", e)
+        return None
+
+
 class OkruBot(commands.Bot):
-    def __init__(self, token: str):
+    def __init__(self, token: str, refresh_token: str):
         super().__init__(
             token=token,
             client_id=settings.TWITCH_CLIENT_ID,
@@ -33,12 +57,14 @@ class OkruBot(commands.Bot):
             prefix="!",
             initial_channels=[settings.TWITCH_CHANNEL],
         )
+        self._refresh_token = refresh_token
         self._checking = False
         self._check_start: float = 0.0
         self._slow_mode: float = _SLOW_MODE_DEFAULT
         self._emote_only: bool = False
         self._chat_disabled: bool = False
         self._last_msg_time: float = 0.0
+        self._refresh_task: asyncio.Task | None = None
 
     # ------------------------------------------------------------------
     # Connected
@@ -49,6 +75,49 @@ class OkruBot(commands.Bot):
             self.nick,
             settings.TWITCH_CHANNEL,
         )
+        # Start background token refresh loop
+        if self._refresh_task is None or self._refresh_task.done():
+            self._refresh_task = asyncio.create_task(self._token_refresh_loop())
+
+    # ------------------------------------------------------------------
+    # Token refresh loop
+    # ------------------------------------------------------------------
+    async def _token_refresh_loop(self):
+        while True:
+            await asyncio.sleep(_TOKEN_REFRESH_INTERVAL)
+            logger.info("Refreshing Twitch token...")
+            result = await _do_token_refresh(self._refresh_token)
+            if result is None:
+                logger.warning("Token refresh failed — bot will restart to recover")
+                # Trigger bot restart via stop so start_bot can be called again
+                asyncio.create_task(self._restart())
+                return
+
+            new_access, new_refresh = result
+            self._refresh_token = new_refresh
+
+            # Persist updated credentials
+            try:
+                creds = load_credentials() or {}
+                creds["access_token"] = new_access
+                creds["refresh_token"] = new_refresh
+                save_credentials(creds)
+                logger.info("Token refreshed and persisted")
+            except Exception as e:
+                logger.warning("Failed to persist refreshed token: %s", e)
+
+            # Update token in twitchio's internal http client
+            try:
+                token_with_prefix = f"oauth:{new_access}" if not new_access.startswith("oauth:") else new_access
+                self._connection.token = token_with_prefix  # type: ignore[attr-defined]
+                logger.info("IRC token updated in connection")
+            except Exception as e:
+                logger.warning("Could not update token in connection (will use on next reconnect): %s", e)
+
+    async def _restart(self):
+        """Stop self and restart via module-level start_bot."""
+        await stop_bot()
+        await start_bot()
 
     # ------------------------------------------------------------------
     # Safe send
@@ -150,6 +219,15 @@ class OkruBot(commands.Bot):
     async def event_error(self, error: Exception, data: str | None = None):
         logger.error("Bot error: %s", error)
 
+    async def close(self):
+        if self._refresh_task and not self._refresh_task.done():
+            self._refresh_task.cancel()
+            try:
+                await self._refresh_task
+            except asyncio.CancelledError:
+                pass
+        await super().close()
+
 
 async def stop_bot():
     global _bot_instance
@@ -170,17 +248,16 @@ async def start_bot():
         return
 
     access_token = creds.get("access_token")
+    refresh_token = creds.get("refresh_token", "")
     if not access_token:
         logger.error("Credentials missing access_token")
         return
 
-    # twitchio v2 expects token without "oauth:" prefix in some cases,
-    # but adding it is safe — the library handles both.
     token = access_token
     if not token.startswith("oauth:"):
         token = f"oauth:{token}"
 
-    _bot_instance = OkruBot(token=token)
+    _bot_instance = OkruBot(token=token, refresh_token=refresh_token)
     try:
         await _bot_instance.start()
     except Exception as e:
