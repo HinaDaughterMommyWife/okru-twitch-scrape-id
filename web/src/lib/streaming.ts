@@ -1,5 +1,6 @@
 export interface StreamingData {
-  streaming_id: string;
+  vk_oid: string;
+  vk_id: string;
   updated_at: string;
 }
 

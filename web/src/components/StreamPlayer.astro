@@ -1,20 +1,23 @@
 ---
 interface Props {
-  streamingId: string;
+  vkOid: string;
+  vkId: string;
   hostname: string;
 }
 
-const { streamingId, hostname } = Astro.props;
+const { vkOid, vkId, hostname } = Astro.props;
 ---
 
 <div class="flex h-full flex-col md:flex-row">
-  {/* Video ok.ru */}
+  {/* Video */}
   <div class="w-full shrink-0 aspect-video md:aspect-auto md:h-full md:flex-1">
     <iframe
-      title={`video-${streamingId}`}
+      title="video"
       class="h-full w-full border-0"
-      src={`//ok.ru/videoembed/${streamingId}?nochat=1&autoplay=1`}
-      allow="autoplay"
+      src={`https://vk.com/video_ext.php?oid=${vkOid}&id=${vkId}&hd=4`}
+      width="1920"
+      height="1080"
+      allow="autoplay; encrypted-media; fullscreen; picture-in-picture; screen-wake-lock;"
       allowfullscreen
     ></iframe>
   </div>

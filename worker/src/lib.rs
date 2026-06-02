@@ -6,16 +6,14 @@ const KV_KEY: &str = "current";
 
 #[derive(Deserialize)]
 struct PostBody {
-    streaming_id: String,
-    #[allow(dead_code)]
-    source_url: Option<String>,
-    #[allow(dead_code)]
-    timestamp: Option<String>,
+    vk_oid: String,
+    vk_id: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct KvEntry {
-    streaming_id: String,
+    vk_oid: String,
+    vk_id: String,
     updated_at: String,
 }
 
@@ -84,7 +82,7 @@ async fn handle_post(mut req: Request, ctx: RouteContext<()>) -> Result<Response
             return json_response(
                 400,
                 &ErrorResponse {
-                    error: "invalid JSON body – expected {\"streaming_id\": \"...\"}".into(),
+                    error: "invalid JSON body – expected {\"vk_oid\": \"...\", \"vk_id\": \"...\"}".into(),
                 },
             )
         }
@@ -93,7 +91,8 @@ async fn handle_post(mut req: Request, ctx: RouteContext<()>) -> Result<Response
     let kv = ctx.kv("OKRU_ID")?;
 
     let entry = KvEntry {
-        streaming_id: body.streaming_id,
+        vk_oid: body.vk_oid,
+        vk_id: body.vk_id,
         updated_at: now_iso(),
     };
 
@@ -113,10 +112,23 @@ async fn handle_get(req: Request, ctx: RouteContext<()>) -> Result<Response> {
 
     match kv.get(KV_KEY).text().await? {
         Some(value) => {
-            let mut resp = Response::ok(value)?;
-            resp.headers_mut().set("Content-Type", "application/json")?;
-            resp.headers_mut().set("Cache-Control", "no-store")?;
-            Ok(resp)
+            match serde_json::from_str::<KvEntry>(&value) {
+                Ok(_) => {
+                    let mut resp = Response::ok(value)?;
+                    resp.headers_mut().set("Content-Type", "application/json")?;
+                    resp.headers_mut().set("Cache-Control", "no-store")?;
+                    Ok(resp)
+                }
+                Err(_) => {
+                    // old format data in kv – treat as empty
+                    json_response(
+                        404,
+                        &ErrorResponse {
+                            error: "no streaming id stored yet".into(),
+                        },
+                    )
+                }
+            }
         }
         None => json_response(
             404,
