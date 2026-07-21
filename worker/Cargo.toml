@@ -11,6 +11,8 @@ worker = "0.8"
 base64 = "0.22"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# worker-build / wrangler require >= 0.2.125
+wasm-bindgen = "0.2.125"
 
 [profile.release]
 opt-level = "s"

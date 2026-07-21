@@ -2,14 +2,13 @@ module.exports = {
   apps: [
     {
       name: "okru-backend",
-      cwd: "./backend",
-      script: ".venv/bin/python",
-      args: "run.py",
+      cwd: "./dist",
+      script: "./okru-backend",
       interpreter: "none",
       watch: false,
       autorestart: true,
       env: {
-        PYTHONUNBUFFERED: "1",
+        RUST_LOG: "info",
       },
       out_file: "../logs/backend.out.log",
       error_file: "../logs/backend.err.log",
@@ -41,4 +40,3 @@ module.exports = {
     },
   ],
 };
-

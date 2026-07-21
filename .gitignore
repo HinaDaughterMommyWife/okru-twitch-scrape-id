@@ -9,6 +9,12 @@ web/.astro/
 worker/target/
 worker/build/
 
+# build output - backend (rust)
+backend/target/
+dist/
+backend/config.toml
+backend/credentials.json
+
 # environment & secrets
 .env
 .env.*
@@ -36,7 +42,7 @@ Thumbs.db
 .dev.vars
 worker-configuration.d.ts
 
-# python
+# python (legacy leftovers)
 __pycache__/
 *.py[cod]
 *.pyo
@@ -44,21 +50,9 @@ __pycache__/
 venv/
 .uv/
 *.egg-info/
-dist/
-build/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-
-# backend data (credentials, runtime files)
-backend/data/
-backend/.tio.tokens.json
-
-# output (scrapling artifacts)
-output/
-
-# error logs from check_docker.sh
-error-docker/
 
 # pm2 logs
 logs/

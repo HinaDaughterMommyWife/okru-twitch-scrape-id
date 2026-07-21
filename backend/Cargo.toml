@@ -1,0 +1,32 @@
+[package]
+name = "okru-backend"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "okru-backend"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+async-trait = "0.1"
+axum = "0.8"
+base64 = "0.22"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }
+regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "gzip", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+toml = "0.8"
+tower-http = { version = "0.6", features = ["cors"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+twitch-irc = { version = "5", default-features = false, features = ["transport-tcp", "transport-tcp-rustls-webpki-roots", "refreshing-token-rustls-webpki-roots"] }
+urlencoding = "2"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

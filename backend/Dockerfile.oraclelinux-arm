@@ -1,0 +1,44 @@
+# Multi-stage build for Oracle Linux 8 (glibc) on linux/arm64.
+# Build on your PC, then copy the binary to the Oracle Linux ARM host.
+#
+#   docker buildx build --platform linux/arm64 \
+#     -f Dockerfile.oraclelinux-arm \
+#     --output type=local,dest=./dist \
+#     .
+#
+# Result: ./dist/okru-backend
+
+# ---- builder ----
+FROM oraclelinux:8 AS builder
+
+RUN dnf -y install gcc openssl-devel pkgconf-pkg-config curl ca-certificates \
+    && dnf clean all
+
+# Install Rust (stable)
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:$PATH
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable \
+    && rustc --version
+
+WORKDIR /src
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
+
+# Build release binary
+RUN cargo build --release \
+    && cp target/release/okru-backend /okru-backend \
+    && strip /okru-backend || true
+
+# ---- export stage (for --output type=local) ----
+FROM scratch AS export
+COPY --from=builder /okru-backend /okru-backend
+
+# ---- runtime reference (optional: run inside OL8) ----
+FROM oraclelinux:8 AS runtime
+RUN dnf -y install ca-certificates \
+    && dnf clean all
+COPY --from=builder /okru-backend /usr/local/bin/okru-backend
+WORKDIR /app
+EXPOSE 9622
+ENTRYPOINT ["/usr/local/bin/okru-backend"]

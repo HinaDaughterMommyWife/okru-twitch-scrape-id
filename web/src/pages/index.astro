@@ -24,7 +24,14 @@ let vkId: string | null = null;
 let updatedAt: string | null = null;
 let errorMessage: string | null = null;
 
-if (!workerUrl || !authToken) {
+// Manual override via ?id= — accepts:
+//   video_1117440596_456239034 | video-1117440596_456239034
+//   video1117440596_456239034  | 1117440596_456239034
+const idMatch = queryId?.match(/^(?:video[_-]?)?(-?\d+)_(\d+)$/);
+if (idMatch) {
+  vkOid = idMatch[1];
+  vkId = idMatch[2];
+} else if (!workerUrl || !authToken) {
   errorMessage = "Configuración incompleta, comuníquese con el administrador.";
 } else {
   const result = await fetchStreamingId(workerUrl, authToken);

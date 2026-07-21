@@ -1,0 +1,18 @@
+# Copy this file next to the okru-backend binary as config.toml and fill in values.
+
+idvk = "id1117440596"          # VK profile/community to scrape
+intervalo = 60                 # minutes between loop ticks (once #vk activates the window)
+
+twitchTokenId = ""             # Twitch application client id
+twitchTokenSecret = ""         # Twitch application client secret
+channelTarget = "thedarkraimola"
+botName = "comomegustapadreball"
+
+# === Downstream webhook (where to POST stream IDs) ===
+postURL = "http://localhost:8787/streaming"
+postAuth = ""
+
+# === Local HTTP server (health + OAuth setup) ===
+setupPathKey = ""              # secret path segment; leave empty to auto-generate on first run
+port = 9622
+baseUrl = "http://localhost:9622"
