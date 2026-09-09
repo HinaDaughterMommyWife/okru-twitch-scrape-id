@@ -11,7 +11,10 @@ worker/build/
 
 # build output - backend (rust)
 backend/target/
+# local / native binary + config (make install / make up)
 dist/
+# Oracle Linux 8 aarch64 binary + config (make build-oracle-arm)
+arm/
 backend/config.toml
 backend/credentials.json
 

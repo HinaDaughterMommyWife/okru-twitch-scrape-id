@@ -29,13 +29,10 @@ Backend lee `dist/config.toml` (junto al binario). OAuth local: `{baseUrl}/{setu
 
 ### Oracle Linux 8 ARM build
 
-Build on your machine, copy the binary to the server:
+Build on your machine, copy the binary to the server + config.toml
 
 ```bash
 make build-oracle-arm
-# → dist/okru-backend  (linux/arm64, glibc OL8)
-
-scp dist/okru-backend dist/config.toml user@oracle-host:~/okru/
 ```
 
 ### Config (`config.toml` next to the binary)

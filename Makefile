@@ -2,8 +2,9 @@
 
 BACKEND_DIR := backend
 DIST_DIR := dist
+ARM_DIR := arm
 
-# Local install: build release binary into ./dist and copy config example
+# Local dev: native release binary → ./dist
 install: build-release
 	mkdir -p $(DIST_DIR)
 	cp $(BACKEND_DIR)/target/release/okru-backend $(DIST_DIR)/okru-backend
@@ -19,27 +20,28 @@ build:
 build-release:
 	cd $(BACKEND_DIR) && cargo build --release
 
-# Cross-build for Oracle Linux 8 ARM (glibc). Requires docker buildx.
-# Output: ./dist/okru-backend
+# Cross-build for Oracle Linux 8 ARM (aarch64, glibc 2.28) via cargo-zigbuild.
+# Builds on host arch — no ARM emulation required. Output: ./arm/okru-backend
 build-oracle-arm:
-	mkdir -p $(DIST_DIR)
-	docker buildx build --platform linux/arm64 \
+	mkdir -p $(ARM_DIR)
+	docker buildx build \
 		-f $(BACKEND_DIR)/Dockerfile.oraclelinux-arm \
 		--target export \
-		--output type=local,dest=$(DIST_DIR) \
+		--output type=local,dest=$(ARM_DIR) \
 		$(BACKEND_DIR)
-	@if [ ! -f $(DIST_DIR)/config.toml ]; then \
-		cp $(BACKEND_DIR)/config.example.toml $(DIST_DIR)/config.toml; \
-		echo "Wrote $(DIST_DIR)/config.toml — edit before running."; \
+	@if [ ! -f $(ARM_DIR)/config.toml ]; then \
+		cp $(BACKEND_DIR)/config.example.toml $(ARM_DIR)/config.toml; \
+		echo "Wrote $(ARM_DIR)/config.toml — edit before running."; \
 	fi
-	@echo "ARM binary: $(DIST_DIR)/okru-backend"
+	@file $(ARM_DIR)/okru-backend
+	@echo "ARM binary: $(ARM_DIR)/okru-backend"
 
 run:
 	cd $(DIST_DIR) && ./okru-backend
 
 clean:
 	cd $(BACKEND_DIR) && cargo clean
-	rm -rf $(DIST_DIR)
+	rm -rf $(DIST_DIR) $(ARM_DIR)
 
 # Local dev stack via pm2 (backend + worker + web)
 up: install
