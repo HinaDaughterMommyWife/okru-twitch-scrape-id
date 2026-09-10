@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use worker::*;
 
 const KV_KEY: &str = "current";
+const KV_VODS: &str = "VODS";
 
 #[derive(Deserialize)]
 struct PostBody {
@@ -14,6 +15,28 @@ struct PostBody {
 struct KvEntry {
     vk_oid: String,
     vk_id: String,
+    updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct VodItem {
+    id: i64,
+    owner_id: i64,
+    title: String,
+    duration: String,
+    live_status: String,
+    date: i64,
+    thumb: String,
+}
+
+#[derive(Deserialize)]
+struct VodsPostBody {
+    items: Vec<VodItem>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct VodsEntry {
+    items: Vec<VodItem>,
     updated_at: String,
 }
 
@@ -120,7 +143,6 @@ async fn handle_get(req: Request, ctx: RouteContext<()>) -> Result<Response> {
                     Ok(resp)
                 }
                 Err(_) => {
-                    // old format data in kv – treat as empty
                     json_response(
                         404,
                         &ErrorResponse {
@@ -139,11 +161,76 @@ async fn handle_get(req: Request, ctx: RouteContext<()>) -> Result<Response> {
     }
 }
 
+async fn handle_vods_post(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    if !is_authorized(&req, &ctx) {
+        return unauthorized();
+    }
+
+    let mut body: VodsPostBody = match req.json().await {
+        Ok(b) => b,
+        Err(_) => {
+            return json_response(
+                400,
+                &ErrorResponse {
+                    error: "invalid JSON body – expected {\"items\": [...]}".into(),
+                },
+            )
+        }
+    };
+
+    body.items.sort_by(|a, b| b.id.cmp(&a.id));
+
+    let kv = ctx.kv("OKRU_ID")?;
+    let entry = VodsEntry {
+        items: body.items,
+        updated_at: now_iso(),
+    };
+
+    kv.put(KV_VODS, serde_json::to_string(&entry).unwrap())?
+        .execute()
+        .await?;
+
+    json_response(200, &entry)
+}
+
+async fn handle_vods_get(req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    if !is_authorized(&req, &ctx) {
+        return unauthorized();
+    }
+
+    let kv = ctx.kv("OKRU_ID")?;
+
+    match kv.get(KV_VODS).text().await? {
+        Some(value) => match serde_json::from_str::<VodsEntry>(&value) {
+            Ok(_) => {
+                let mut resp = Response::ok(value)?;
+                resp.headers_mut().set("Content-Type", "application/json")?;
+                resp.headers_mut().set("Cache-Control", "no-store")?;
+                Ok(resp)
+            }
+            Err(_) => json_response(
+                404,
+                &ErrorResponse {
+                    error: "no vods stored yet".into(),
+                },
+            ),
+        },
+        None => json_response(
+            404,
+            &ErrorResponse {
+                error: "no vods stored yet".into(),
+            },
+        ),
+    }
+}
+
 #[event(fetch)]
 async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     Router::new()
         .post_async("/streaming", handle_post)
         .get_async("/streaming", handle_get)
+        .post_async("/vods", handle_vods_post)
+        .get_async("/vods", handle_vods_get)
         .run(req, env)
         .await
 }

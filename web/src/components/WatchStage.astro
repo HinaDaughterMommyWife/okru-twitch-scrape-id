@@ -1,0 +1,100 @@
+---
+import StreamPlayer from "./StreamPlayer.astro";
+import TwitchChat from "./TwitchChat.astro";
+import PlayerBadge from "./PlayerBadge.astro";
+import NoStream from "./NoStream.astro";
+
+interface Props {
+  hostname: string;
+  vkOid: string | null;
+  vkId: string | null;
+}
+
+const { hostname, vkOid, vkId } = Astro.props;
+const playing = Boolean(vkOid && vkId);
+const mode = playing ? "playing" : "waiting";
+---
+
+<div
+  data-watch-stage
+  data-stream-player
+  data-mode={mode}
+  class="group/player relative flex h-full flex-col md:flex-row"
+>
+  <div data-video-pane class="group/video relative isolate z-0 w-full shrink-0 aspect-video md:aspect-auto md:h-full md:flex-1">
+    {!playing && (
+      <div
+        data-pane="waiting"
+        class="absolute inset-0 z-10 bg-[#0e0e10] transition-opacity duration-500 ease-out"
+      >
+        <NoStream />
+      </div>
+    )}
+    <StreamPlayer vkOid={vkOid} vkId={vkId} />
+    <PlayerBadge
+      side="right"
+      label="Esconder Chat"
+      altLabel="Mostrar Chat"
+      toggleAttr="data-chat-hidden"
+      toggleRoot="[data-stream-player]"
+      display="desktop"
+      class="group-data-[mode=waiting]/player:hidden!"
+    />
+  </div>
+
+  <TwitchChat hostname={hostname} />
+</div>
+
+<script>
+  import { vkEmbedSrc } from "../lib/streaming";
+  import { attachVkSound } from "../lib/vkPlayer";
+
+  const FADE_MS = 500;
+  const stage = document.querySelector("[data-watch-stage]");
+
+  if (stage instanceof HTMLElement && stage.dataset.mode === "waiting") {
+    stage.addEventListener("watch:stream", (event) => {
+      const detail = (event as CustomEvent<{ vkOid: string; vkId: string }>).detail;
+      if (!detail?.vkOid || !detail.vkId) return;
+      revealPlayer(stage, detail.vkOid, detail.vkId);
+    });
+  }
+
+  function revealPlayer(root: HTMLElement, vkOid: string, vkId: string) {
+    if (root.dataset.mode === "playing") return;
+    const waiting = root.querySelector("[data-pane='waiting']");
+    const frame = root.querySelector("[data-vk-frame]");
+    if (!(waiting instanceof HTMLElement) || !(frame instanceof HTMLIFrameElement)) return;
+
+    root.dataset.mode = "playing";
+    frame.src = vkEmbedSrc(vkOid, vkId);
+    attachVkSound(frame);
+
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      waiting.remove();
+    };
+
+    waiting.addEventListener(
+      "transitionend",
+      (event) => {
+        if (event.target === waiting && event.propertyName === "opacity") finish();
+      },
+      { once: true },
+    );
+    window.setTimeout(finish, FADE_MS + 80);
+
+    waiting.style.transition = `opacity ${FADE_MS}ms ease`;
+    frame.style.transition = `opacity ${FADE_MS}ms ease`;
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        waiting.style.opacity = "0";
+        waiting.style.pointerEvents = "none";
+        frame.style.opacity = "1";
+      });
+    });
+  }
+</script>

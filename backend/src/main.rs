@@ -140,12 +140,33 @@ async fn interval_loop(cfg: Arc<Config>, http: reqwest::Client, scheduler: Arc<S
         }
 
         tracing::info!("--- interval tick ---");
-        match vk::check_and_ids(&http, &cfg.idvk).await {
-            Ok((found, oid, vid)) => {
-                tracing::info!("interval scrape found={found} oid={oid} vid={vid}");
-                if let Err(e) =
-                    worker_client::post_to_worker(&http, &cfg.post_url, &cfg.post_auth, &oid, &vid)
-                        .await
+        match vk::prefetch(&http, &cfg.idvk).await {
+            Ok(result) => {
+                tracing::info!(
+                    "interval scrape found={} oid={} vid={} vods={}",
+                    result.found,
+                    result.vk_oid,
+                    result.vk_id,
+                    result.items.len()
+                );
+                if let Err(e) = worker_client::post_vods(
+                    &http,
+                    &cfg.post_url,
+                    &cfg.post_auth,
+                    &result.items,
+                )
+                .await
+                {
+                    tracing::error!("interval VODS POST failed: {e:#}");
+                }
+                if let Err(e) = worker_client::post_to_worker(
+                    &http,
+                    &cfg.post_url,
+                    &cfg.post_auth,
+                    &result.vk_oid,
+                    &result.vk_id,
+                )
+                .await
                 {
                     tracing::error!("interval POST failed: {e:#}");
                 }

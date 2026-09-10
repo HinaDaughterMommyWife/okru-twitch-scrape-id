@@ -1,0 +1,46 @@
+---
+interface Props {
+  label: string;
+  altLabel?: string;
+  side: "left" | "right";
+  toggleAttr?: string;
+  toggleRoot?: string;
+  display?: "always" | "desktop";
+  class?: string;
+  id?: string;
+}
+
+const {
+  label,
+  altLabel,
+  side,
+  toggleAttr,
+  toggleRoot,
+  display = "always",
+  class: extraClass,
+  id,
+} = Astro.props;
+---
+
+<button
+  id={id}
+  type="button"
+  data-player-badge
+  data-label={label}
+  data-alt-label={altLabel}
+  data-toggle-attr={toggleAttr}
+  data-toggle-root={toggleRoot}
+  class:list={[
+    "absolute top-3 z-50 cursor-pointer items-center rounded-md bg-black/75 px-3 py-1.5 text-xs font-medium text-white shadow-lg ring-1 ring-white/15 backdrop-blur-sm transition-opacity duration-300",
+    side === "left" ? "left-3" : "right-3",
+    display === "desktop" ? "hidden opacity-0 md:flex" : "flex opacity-100 md:opacity-0",
+    extraClass,
+  ]}
+>
+  {label}
+</button>
+
+<script>
+  import { initPlayerOverlays } from "../lib/playerOverlay";
+  initPlayerOverlays();
+</script>

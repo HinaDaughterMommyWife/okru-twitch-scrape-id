@@ -1,0 +1,13 @@
+---
+export const prerender = false;
+
+import FallbackPage from "../components/FallbackPage.astro";
+
+Astro.response.status = 404;
+---
+
+<FallbackPage
+  code={404}
+  title="Pagina no encontrada"
+  message="Esta ruta no existe."
+/>

@@ -1,0 +1,32 @@
+---
+interface Props {
+  code: 404 | 500;
+  title: string;
+  message: string;
+}
+
+import "../styles/global.css";
+
+const { code, title, message } = Astro.props;
+---
+
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/favicon.ico" />
+    <title>{title} · SapoPerro Ruso</title>
+  </head>
+  <body class="m-0 flex h-dvh w-screen flex-col items-center justify-center gap-3 overflow-hidden bg-[#0e0e10] px-4 text-white">
+    <img src="/shock.webp" alt="" class="w-40 opacity-40 select-none pointer-events-none md:w-48" style="filter: grayscale(50%)" />
+    <p class="font-mono text-sm text-gray-500">{code}</p>
+    <p class="text-gray-200">{title}</p>
+    <p class="max-w-md text-center text-sm text-gray-500">{message}</p>
+    <a
+      href="/"
+      class="mt-2 inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3.5 py-1.5 text-sm font-medium text-gray-100 shadow-md ring-1 ring-white/15 transition hover:bg-white/20 hover:text-white hover:ring-[#9147ff]/50 active:scale-[0.98]"
+    >
+      Volver
+    </a>
+  </body>
+</html>

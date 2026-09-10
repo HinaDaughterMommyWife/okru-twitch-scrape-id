@@ -25,7 +25,7 @@ make logs
 make down
 ```
 
-Backend lee `dist/config.toml` (junto al binario). OAuth local: `{baseUrl}/{setupPathKey}/setup`.
+The backend reads its configuration from `dist/config.toml` (located next to the binary). For local OAuth setup, use `{baseUrl}/{setupPathKey}/setup`.
 
 ### Oracle Linux 8 ARM build
 

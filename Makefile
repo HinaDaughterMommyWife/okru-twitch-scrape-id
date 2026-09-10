@@ -15,10 +15,10 @@ install: build-release
 	@echo "Binary: $(DIST_DIR)/okru-backend"
 
 build:
-	cd $(BACKEND_DIR) && cargo build
+	cd $(BACKEND_DIR) && cargo build --bin okru-backend
 
 build-release:
-	cd $(BACKEND_DIR) && cargo build --release
+	cd $(BACKEND_DIR) && cargo build --release --bin okru-backend
 
 # Cross-build for Oracle Linux 8 ARM (aarch64, glibc 2.28) via cargo-zigbuild.
 # Builds on host arch — no ARM emulation required. Output: ./arm/okru-backend

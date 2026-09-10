@@ -1,16 +1,66 @@
 ---
-interface Props {
+const ART_POOL = [
+  "/shock.webp",
+  "/shupo-12.webp",
+  "/shupo-13.webp",
+  "/shupo-24.webp",
+  "/shupo-25.webp",
+  "/shupo-47.webp",
+  "/sleep.webp",
+  "/hikari.webp",
+  "/derp.webp",
+];
+
+const artSrcs = ART_POOL.slice();
+for (let i = artSrcs.length - 1; i > 0; i--) {
+  const j = Math.floor(Math.random() * (i + 1));
+  const current = artSrcs[i]!;
+  artSrcs[i] = artSrcs[j]!;
+  artSrcs[j] = current;
 }
+const firstArt = artSrcs[0] ?? ART_POOL[0];
 ---
 
-<div class="flex h-full flex-col items-center justify-center gap-3">
-  <img src="/sleep.webp" alt="hikari" class="w-40 opacity-40 select-none pointer-events-none" style="filter: grayscale(50%)" />
+<div data-no-stream class="relative flex h-full w-full flex-col items-center justify-center gap-2 overflow-y-auto px-4 py-3 md:gap-3">
+  <a
+    href="https://github.com/HinaDaughterMommyWife/okru-twitch-scrape-id"
+    target="_blank"
+    rel="noopener noreferrer"
+    class="absolute top-1.5 right-1.5 z-10 inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-[9px] font-medium text-gray-500 transition hover:bg-white/5 hover:text-gray-200 md:top-3 md:right-3 md:gap-1.5 md:px-1.5 md:py-1 md:text-xs"
+  >
+    <svg class="size-2.5 shrink-0 md:size-3.5" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+      <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+    </svg>
+    Source code
+  </a>
+  <div class="flex size-24 shrink-0 items-center justify-center">
+    <img id="no-stream-art" src={firstArt} data-srcs={JSON.stringify(artSrcs)} alt="" width="96" height="96" class="size-full object-contain opacity-40 select-none pointer-events-none transition-opacity duration-700" style="filter: grayscale(50%)" />
+  </div>
   <p class="text-gray-400">No hay Stream</p>
+  <div class="flex flex-wrap items-center justify-center gap-2">
+    <button
+      id="refresh-stream"
+      type="button"
+      class="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3.5 py-1.5 text-sm font-medium text-gray-100 shadow-md ring-1 ring-white/15 transition hover:bg-white/20 hover:text-white hover:ring-[#9147ff]/50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-white/10 disabled:hover:ring-white/15"
+    >
+      <img src="/plush.webp" alt="" width="32" height="32" class="size-[1.5em] shrink-0 object-contain" />
+      <span>Refresh</span>
+      <span id="refresh-wait" class="hidden font-mono text-[0.85em] tabular-nums text-gray-400">6s</span>
+    </button>
+    <a
+      href="/vods"
+      target="_blank"
+      rel="noopener noreferrer"
+      class="inline-flex items-center rounded-full bg-white/10 px-3.5 py-1.5 text-sm font-medium text-gray-100 shadow-md ring-1 ring-white/15 transition hover:bg-white/20 hover:text-white hover:ring-[#9147ff]/50 active:scale-[0.98]"
+    >
+      Ver VODs
+    </a>
+  </div>
   <div class="flex flex-col text-center gap-1">
-    <p class="text-sm text-gray-500">Pidele a un Mod o al SapoPerro que escriba <code class="bg-gray-800 text-gray-200 rounded px-1 py-0.5 font-mono text-xs">#vk</code> en el chat de <strong class="twitch-glow font-bold">Twitch</strong></p>
-    <p class="text-xs text-gray-600 mb-1"><code class="bg-gray-800/90 text-gray-100 border border-gray-700 rounded px-1.5 py-0.5 font-mono text-[11px]">#vk</code> solo lo pueden usar moderadores</p>
-    <p class="text-sm text-gray-500">
-      Esta pagina se refrescara automaticamente en <span id="countdown">01:00</span>
+    <p class="text-xs text-gray-500 md:text-sm">Pidele a un Mod o al SapoPerro que escriba <code class="bg-gray-800 text-gray-200 rounded px-1 py-0.5 font-mono text-xs">#vk</code> en el chat de <strong class="twitch-glow font-bold">Twitch</strong></p>
+    <p class="text-[11px] text-gray-600 mb-1 md:text-xs"><code class="bg-gray-800/90 text-gray-100 border border-gray-700 rounded px-1.5 py-0.5 font-mono text-[11px]">#vk</code> solo lo pueden usar moderadores</p>
+    <p class="text-xs text-gray-500 md:text-sm">
+      Buscaremos un stream de nuevo en <span id="countdown">01:00</span>
     </p>
   </div>
 </div>
@@ -32,25 +82,138 @@ interface Props {
 </style>
 
 <script>
-  const INTERVAL_MS = 60 * 1000;
-  const el = document.getElementById("countdown");
-  if (el instanceof HTMLElement) {
-    const startedAt = Date.now();
+  import { liveStreamIds, parseVideoQueryId, type StreamingResult } from "../lib/streaming";
 
-    function tick() {
-      const elapsed = Date.now() - startedAt;
-      const remaining = INTERVAL_MS - elapsed;
-      if (remaining <= 0) {
-        window.location.reload();
-        return;
-      }
+  const INTERVAL_MS = 60 * 1000;
+  const REFRESH_COOLDOWN_MS = 6 * 1000;
+  const ART_MS = 10 * 1000;
+  const ART_FADE_MS = 700;
+  const countdown = document.getElementById("countdown");
+  const refreshBtn = document.getElementById("refresh-stream");
+  const refreshWait = document.getElementById("refresh-wait");
+  const art = document.getElementById("no-stream-art");
+
+  if (
+    countdown instanceof HTMLElement &&
+    refreshBtn instanceof HTMLButtonElement &&
+    refreshWait instanceof HTMLElement
+  ) {
+    const countdownEl = countdown;
+    const btn = refreshBtn;
+    const waitEl = refreshWait;
+    const artEl = art instanceof HTMLImageElement ? art : null;
+    const artSrcs: string[] = artEl?.dataset.srcs ? JSON.parse(artEl.dataset.srcs) : [];
+
+    let stopped = false;
+    let checking = false;
+    let cycleStartedAt = Date.now();
+    let refreshReadyAt = 0;
+    let timer = 0;
+    let artTimer = 0;
+    let artIndex = 0;
+
+    function stopPolling() {
+      stopped = true;
+      window.clearInterval(timer);
+      window.clearTimeout(artTimer);
+    }
+
+    function delay(ms: number) {
+      return new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+    }
+
+    async function swapArt() {
+      if (stopped || !artEl || artSrcs.length === 0) return;
+      artEl.style.opacity = "0";
+      await delay(ART_FADE_MS);
+      if (stopped) return;
+      artIndex = (artIndex + 1) % artSrcs.length;
+      const nextSrc = artSrcs[artIndex];
+      if (!nextSrc) return;
+      artEl.src = nextSrc;
+      await artEl.decode().catch(() => {});
+      if (stopped) return;
+      artEl.style.opacity = "";
+    }
+
+    function scheduleArtSwap() {
+      artTimer = window.setTimeout(() => {
+        void swapArt().then(() => {
+          if (!stopped) scheduleArtSwap();
+        });
+      }, ART_MS);
+    }
+
+    function refreshRemainingMs() {
+      return Math.max(0, refreshReadyAt - Date.now());
+    }
+
+    function paintRefreshWait() {
+      const remaining = refreshRemainingMs();
+      const cooling = remaining > 0;
+      btn.disabled = cooling || checking;
+      waitEl.textContent = `${Math.ceil(remaining / 1000)}s`;
+      waitEl.classList.toggle("hidden", !cooling);
+    }
+
+    function paintCountdown() {
+      const remaining = Math.max(0, INTERVAL_MS - (Date.now() - cycleStartedAt));
       const totalSecs = Math.ceil(remaining / 1000);
       const mins = Math.floor(totalSecs / 60).toString().padStart(2, "0");
       const secs = (totalSecs % 60).toString().padStart(2, "0");
-      el!.textContent = `${mins}:${secs}`;
+      countdownEl.textContent = `${mins}:${secs}`;
+      return remaining;
     }
 
-    tick();
-    setInterval(tick, 1000);
+    async function checkStream() {
+      if (stopped || checking) return false;
+      if (parseVideoQueryId(new URL(window.location.href).searchParams.get("id"))) return false;
+      checking = true;
+      paintRefreshWait();
+      try {
+        const res = await fetch("/api/lastStream", { cache: "no-store" });
+        const result = (await res.json()) as StreamingResult;
+        const ids = liveStreamIds(result);
+        if (!ids) return false;
+        stopPolling();
+        document.querySelector("[data-watch-stage]")?.dispatchEvent(
+          new CustomEvent("watch:stream", { detail: ids, bubbles: true }),
+        );
+        return true;
+      } catch {
+        return false;
+      } finally {
+        checking = false;
+        if (!stopped) paintRefreshWait();
+      }
+    }
+
+    btn.addEventListener("click", () => {
+      if (stopped || checking || refreshRemainingMs() > 0) return;
+      refreshReadyAt = Date.now() + REFRESH_COOLDOWN_MS;
+      paintRefreshWait();
+      void checkStream();
+    });
+
+    timer = window.setInterval(() => {
+      if (stopped) return;
+      paintRefreshWait();
+      const remaining = paintCountdown();
+      if (remaining <= 0 && !checking) {
+        void checkStream().then((swapped) => {
+          if (swapped || stopped) return;
+          cycleStartedAt = Date.now();
+          paintCountdown();
+        });
+      }
+    }, 250);
+
+    paintCountdown();
+    paintRefreshWait();
+    for (const src of artSrcs) {
+      const preload = new Image();
+      preload.src = src;
+    }
+    scheduleArtSwap();
   }
 </script>

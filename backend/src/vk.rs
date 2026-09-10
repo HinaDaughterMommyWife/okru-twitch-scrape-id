@@ -1,88 +1,45 @@
-//! VK HTML scraper — 1:1 port of migrate/vk/vk_stream_check.py
+//! VK profile scrape via `window.cur.apiPrefetchCache` (`video.get`).
+//! Live = `live_status == "started"`. Chrome UA required (Googlebot gets the old page).
 
-use anyhow::{Context, Result};
-use regex::Regex;
+#[path = "models/mod.rs"]
+mod models;
+
+use anyhow::{bail, Context, Result};
+use models::VideoGetResponse;
+use reqwest::header::{
+    HeaderMap, HeaderValue, ACCEPT, ACCEPT_LANGUAGE, CACHE_CONTROL, REFERER, USER_AGENT,
+};
+use serde::Deserialize;
 use serde::Serialize;
-use std::collections::HashSet;
-use std::sync::OnceLock;
+use serde_json::Value;
 
-const USER_AGENT: &str =
+const CHROME_UA: &str =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36";
+const GOOGLEBOT_UA: &str =
     "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)";
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
+const MARKER: &[u8] = br#""apiPrefetchCache":"#;
 
 pub const NOT_FOUND_OID: &str = "NOT_FOUND";
 pub const NOT_FOUND_VID: &str = "NOT_FOUND";
 
-#[derive(Debug, Clone, Serialize)]
-pub struct LiveHit {
-    pub token: String,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CatalogItem {
+    pub id: i64,
+    pub owner_id: i64,
+    pub title: String,
+    pub duration: String,
+    pub live_status: String,
+    pub date: i64,
+    pub thumb: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct PrefetchResult {
+    pub found: bool,
     pub vk_oid: String,
     pub vk_id: String,
-    pub source: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub duration: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct AnalyzeResult {
-    pub url: String,
-    pub active_live: bool,
-    pub live: Option<LiveHit>,
-    pub newest_vod: Option<LiveHit>,
-    pub profile_videos: Vec<LiveHit>,
-    pub data_video_count: usize,
-    pub note: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub all_live_candidates: Option<Vec<LiveHit>>,
-}
-
-fn re_data_video() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r#"data-video="(-?\d+_\d+)""#).unwrap())
-}
-
-fn re_video_token() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"video(-?\d+)_(\d+)").unwrap())
-}
-
-fn re_live_block() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| {
-        Regex::new(r#"(?s)data-video="(-?\d+_\d+)"[^>]*data-duration="0""#).unwrap()
-    })
-}
-
-fn re_live_class() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| {
-        Regex::new(
-            r#"(?s)class="video_thumb_label _live"[\s\S]{0,800}?data-video="(-?\d+_\d+)"|data-video="(-?\d+_\d+)"[\s\S]{0,800}?class="video_thumb_label _live""#,
-        )
-        .unwrap()
-    })
-}
-
-fn re_video_block() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| {
-        Regex::new(r#"(?s)<div class="video-block-web">([\s\S]*?)</div>\s*</div>"#).unwrap()
-    })
-}
-
-fn re_href_video() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r#"href="/video(-?\d+)_(\d+)""#).unwrap())
-}
-
-fn re_duration_label() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r#"<span class="duration-label">([^<]+)</span>"#).unwrap())
-}
-
-fn re_has_digit() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"\d").unwrap())
+    pub items: Vec<CatalogItem>,
 }
 
 pub fn normalize_url(raw: &str) -> String {
@@ -101,15 +58,14 @@ pub fn normalize_url(raw: &str) -> String {
     format!("https://vk.com/{}", raw.trim_start_matches('/'))
 }
 
-fn split_video_token(token: &str) -> (String, String) {
-    let (oid, vid) = token.split_once('_').unwrap_or((token, ""));
-    (oid.to_string(), vid.to_string())
-}
-
-fn vk_page_headers(page_url: &str) -> reqwest::header::HeaderMap {
-    use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, ACCEPT_LANGUAGE, CACHE_CONTROL, REFERER, USER_AGENT as UA};
+fn vk_page_headers(page_url: &str, googlebot: bool) -> HeaderMap {
     let mut h = HeaderMap::new();
-    h.insert(UA, HeaderValue::from_static(USER_AGENT));
+    if googlebot {
+        h.insert(USER_AGENT, HeaderValue::from_static(GOOGLEBOT_UA));
+        h.insert("From", HeaderValue::from_static("googlebot(at)googlebot.com"));
+    } else {
+        h.insert(USER_AGENT, HeaderValue::from_static(CHROME_UA));
+    }
     h.insert(
         ACCEPT,
         HeaderValue::from_static(
@@ -122,256 +78,159 @@ fn vk_page_headers(page_url: &str) -> reqwest::header::HeaderMap {
     );
     h.insert(CACHE_CONTROL, HeaderValue::from_static("no-cache"));
     h.insert(REFERER, HeaderValue::from_static("https://vk.com/"));
-    h.insert(
-        "Sec-Fetch-Dest",
-        HeaderValue::from_static("document"),
-    );
+    h.insert("Sec-Fetch-Dest", HeaderValue::from_static("document"));
     h.insert("Sec-Fetch-Mode", HeaderValue::from_static("navigate"));
-    let site = if page_url.contains("vk.com") {
+    let site = if page_url.contains("vk.com") || page_url.contains("vk.ru") {
         "same-origin"
     } else {
         "none"
     };
     h.insert("Sec-Fetch-Site", HeaderValue::from_static(site));
     h.insert("Sec-Fetch-User", HeaderValue::from_static("?1"));
-    h.insert(
-        "From",
-        HeaderValue::from_static("googlebot(at)googlebot.com"),
-    );
     h.insert("Upgrade-Insecure-Requests", HeaderValue::from_static("1"));
     h.insert("Pragma", HeaderValue::from_static("no-cache"));
     h
 }
 
-async fn fetch(client: &reqwest::Client, url: &str) -> Result<String> {
-    tracing::debug!("GET {url}");
+pub async fn fetch_profile_bytes(
+    client: &reqwest::Client,
+    idvk: &str,
+    googlebot: bool,
+) -> Result<(String, Vec<u8>)> {
+    let url = normalize_url(idvk);
+    tracing::info!(
+        "GET {url} ua={}",
+        if googlebot { "googlebot" } else { "chrome" }
+    );
     let resp = client
-        .get(url)
-        .headers(vk_page_headers(url))
+        .get(&url)
+        .headers(vk_page_headers(&url, googlebot))
         .timeout(std::time::Duration::from_secs(DEFAULT_TIMEOUT_SECS))
         .send()
         .await
         .with_context(|| format!("GET {url}"))?
         .error_for_status()
         .with_context(|| format!("HTTP error for {url}"))?;
+    let final_url = resp.url().to_string();
     let bytes = resp.bytes().await.context("leer body VK")?;
-    let html = String::from_utf8_lossy(&bytes).into_owned();
-    tracing::info!("VK fetch OK url={url} bytes={}", html.len());
-    Ok(html)
+    tracing::info!("VK fetch OK url={final_url} bytes={}", bytes.len());
+    Ok((final_url, bytes.to_vec()))
 }
 
-fn find_wall_live(html: &str) -> Vec<LiveHit> {
-    let mut found = Vec::new();
-    let mut seen: HashSet<String> = HashSet::new();
+pub fn extract_prefetch_value(bytes: &[u8]) -> Result<(Value, usize)> {
+    let mut from = 0;
+    let mut last_json_at: Option<usize> = None;
 
-    for re in [re_live_block(), re_live_class()] {
-        for caps in re.captures_iter(html) {
-            let token = caps
-                .iter()
-                .skip(1)
-                .flatten()
-                .map(|m| m.as_str())
-                .next()
-                .unwrap_or("");
-            if token.is_empty() || seen.contains(token) {
-                continue;
-            }
-            seen.insert(token.to_string());
-            let (oid, vid) = split_video_token(token);
-            found.push(LiveHit {
-                token: token.to_string(),
-                vk_oid: oid,
-                vk_id: vid,
-                source: "wall_live".into(),
-                duration: None,
-            });
+    while let Some(rel) = find_subslice(&bytes[from..], MARKER) {
+        let abs = from + rel;
+        let after = abs + MARKER.len();
+        let trimmed = skip_ws(&bytes[after..]);
+        let json_at = after + (bytes[after..].len() - trimmed.len());
+        if trimmed.first() == Some(&b'[') {
+            last_json_at = Some(json_at);
         }
+        from = after;
     }
-    found
+
+    let json_at = last_json_at.context(
+        "no apiPrefetchCache JSON in HTML (wrong UA? Googlebot gets the old page)",
+    )?;
+
+    let mut de = serde_json::Deserializer::from_slice(&bytes[json_at..]);
+    let value = Value::deserialize(&mut de).with_context(|| {
+        let hint = String::from_utf8_lossy(&bytes[json_at..json_at.saturating_add(80)]);
+        format!("invalid apiPrefetchCache JSON near: {hint}")
+    })?;
+    if !value.is_array() {
+        bail!("apiPrefetchCache is not a JSON array");
+    }
+    Ok((value, json_at))
 }
 
-fn find_profile_vods(html: &str) -> Vec<LiveHit> {
-    let mut vods = Vec::new();
-    let mut seen: HashSet<String> = HashSet::new();
-
-    for caps in re_video_block().captures_iter(html) {
-        let block = caps.get(1).map(|m| m.as_str()).unwrap_or("");
-        let Some(href) = re_href_video().captures(block) else {
-            continue;
-        };
-        let oid = href.get(1).unwrap().as_str();
-        let vid = href.get(2).unwrap().as_str();
-        let token = format!("{oid}_{vid}");
-        if seen.contains(&token) {
-            continue;
-        }
-        seen.insert(token.clone());
-        let duration = re_duration_label()
-            .captures(block)
-            .and_then(|c| c.get(1).map(|m| m.as_str().trim().to_string()));
-        vods.push(LiveHit {
-            token,
-            vk_oid: oid.to_string(),
-            vk_id: vid.to_string(),
-            source: "profile_videos".into(),
-            duration,
-        });
-    }
-
-    if !vods.is_empty() {
-        return vods;
-    }
-
-    for caps in re_video_token().captures_iter(html) {
-        let oid = caps.get(1).unwrap().as_str();
-        let vid = caps.get(2).unwrap().as_str();
-        let token = format!("{oid}_{vid}");
-        if seen.contains(&token) {
-            continue;
-        }
-        seen.insert(token.clone());
-        vods.push(LiveHit {
-            token,
-            vk_oid: oid.to_string(),
-            vk_id: vid.to_string(),
-            source: "video_link".into(),
-            duration: None,
-        });
-    }
-    vods
-}
-
-fn newest_by_vk_id(entries: &[LiveHit]) -> Option<LiveHit> {
-    entries
+pub fn catalog_from_prefetch(prefetch: &Value) -> Result<PrefetchResult> {
+    let entries = prefetch
+        .as_array()
+        .context("apiPrefetchCache is not an array")?;
+    let video = entries
         .iter()
-        .max_by_key(|e| e.vk_id.parse::<u64>().unwrap_or(0))
+        .find(|e| e.get("method").and_then(Value::as_str) == Some("video.get"))
         .cloned()
-}
+        .context("video.get missing from apiPrefetchCache")?;
 
-fn is_profile_live_duration(duration: Option<&str>) -> bool {
-    let Some(duration) = duration else {
-        return false;
-    };
-    let label = duration.trim().to_lowercase();
-    if label == "live" || label == "en vivo" {
-        return true;
-    }
-    !label.is_empty() && !re_has_digit().is_match(&label) && label.contains("live")
-}
+    let parsed: VideoGetResponse = serde_json::from_value(video)
+        .context("map video.get into VideoGetResponse")?;
 
-fn find_profile_live(profile_videos: &[LiveHit]) -> Vec<LiveHit> {
-    profile_videos
+    let mut items: Vec<CatalogItem> = parsed
+        .response
+        .items
         .iter()
-        .filter(|v| is_profile_live_duration(v.duration.as_deref()))
-        .map(|v| LiveHit {
-            source: "profile_live".into(),
-            ..v.clone()
+        .map(|item| CatalogItem {
+            id: item.id,
+            owner_id: item.owner_id,
+            title: item.title.clone(),
+            duration: item.duration_hms(),
+            live_status: item.live_status.clone(),
+            date: item.date,
+            thumb: item.thumb_url().unwrap_or("").to_string(),
         })
-        .collect()
-}
-
-pub async fn analyze(client: &reqwest::Client, url: &str) -> Result<AnalyzeResult> {
-    let page_url = normalize_url(url);
-    tracing::info!("Analizando {page_url}");
-    let html = fetch(client, &page_url).await?;
-
-    let live_posts = find_wall_live(&html);
-    let profile_vods = find_profile_vods(&html);
-    let all_data_videos: Vec<_> = re_data_video()
-        .captures_iter(&html)
-        .filter_map(|c| c.get(1).map(|m| m.as_str().to_string()))
         .collect();
+    items.sort_by(|a, b| b.id.cmp(&a.id));
 
-    let mut result = AnalyzeResult {
-        url: page_url,
-        active_live: false,
-        live: None,
-        newest_vod: None,
-        profile_videos: profile_vods.clone(),
-        data_video_count: all_data_videos.len(),
-        note: String::new(),
-        all_live_candidates: None,
-    };
-
-    if !live_posts.is_empty() {
-        let live = live_posts[0].clone();
-        tracing::info!("Live detectado token={}", live.token);
-        result.active_live = true;
-        result.live = Some(live);
-        result.all_live_candidates = Some(live_posts);
-        result.note =
-            "Directo activo detectado en el muro (_live + data-duration=0).".into();
-        return Ok(result);
-    }
-
-    if !profile_vods.is_empty() {
-        let profile_live = find_profile_live(&profile_vods);
-        if !profile_live.is_empty() {
-            let live = newest_by_vk_id(&profile_live).unwrap();
+    match parsed.response.livestream() {
+        Some(live) => {
             tracing::info!(
-                "Live en perfil token={} duration={:?}",
-                live.token,
-                live.duration
+                "Live detectado oid={} id={} title={}",
+                live.owner_id,
+                live.id,
+                live.title
             );
-            let non_live: Vec<_> = profile_vods
-                .iter()
-                .filter(|v| !is_profile_live_duration(v.duration.as_deref()))
-                .cloned()
-                .collect();
-            result.active_live = true;
-            result.live = Some(live);
-            result.all_live_candidates = Some(profile_live);
-            result.newest_vod = newest_by_vk_id(&non_live);
-            result.note =
-                "Directo en perfil (duration-label Live, sin tiempo M:SS).".into();
-            return Ok(result);
+            Ok(PrefetchResult {
+                found: true,
+                vk_oid: live.owner_id.to_string(),
+                vk_id: live.id.to_string(),
+                items,
+            })
         }
-
-        result.newest_vod = newest_by_vk_id(&profile_vods);
-        result.note =
-            "Solo grabaciones en el perfil (duration-label). No hay directo activo en el HTML."
-                .into();
-        tracing::info!("Sin live; VODs en perfil={}", profile_vods.len());
-        return Ok(result);
-    }
-
-    if !all_data_videos.is_empty() {
-        let mut seen = HashSet::new();
-        let mut entries = Vec::new();
-        for token in &all_data_videos {
-            if !seen.insert(token.clone()) {
-                continue;
-            }
-            let (oid, vid) = split_video_token(token);
-            entries.push(LiveHit {
-                token: token.clone(),
-                vk_oid: oid,
-                vk_id: vid,
-                source: "data_video".into(),
-                duration: None,
-            });
+        None => {
+            tracing::info!("Sin live (live_status=started); items={}", items.len());
+            Ok(PrefetchResult {
+                found: false,
+                vk_oid: NOT_FOUND_OID.into(),
+                vk_id: NOT_FOUND_VID.into(),
+                items,
+            })
         }
-        result.newest_vod = newest_by_vk_id(&entries);
-        result.note =
-            "Hay data-video pero sin marca _live en el HTML. Tratar como sin directo activo (posibles replays)."
-                .into();
-        return Ok(result);
     }
-
-    result.note = "No se encontraron vídeos en la página.".into();
-    Ok(result)
 }
 
-/// Run scrape + decide oid/vid for worker POST.
+pub fn catalog_from_bytes(bytes: &[u8]) -> Result<PrefetchResult> {
+    let (value, _) = extract_prefetch_value(bytes)?;
+    catalog_from_prefetch(&value)
+}
+
+/// Fetch profile HTML and build live + VOD catalog (Chrome UA).
+pub async fn prefetch(client: &reqwest::Client, idvk: &str) -> Result<PrefetchResult> {
+    let (_url, bytes) = fetch_profile_bytes(client, idvk, false).await?;
+    catalog_from_bytes(&bytes)
+}
+
+/// Same scrape; `(found, oid, vid)` for worker `/streaming`.
+#[allow(dead_code)]
 pub async fn check_and_ids(
     client: &reqwest::Client,
     idvk: &str,
 ) -> Result<(bool, String, String)> {
-    let result = analyze(client, idvk).await?;
-    if result.active_live {
-        if let Some(live) = result.live {
-            return Ok((true, live.vk_oid, live.vk_id));
-        }
+    let result = prefetch(client, idvk).await?;
+    Ok((result.found, result.vk_oid, result.vk_id))
+}
+
+fn find_subslice(hay: &[u8], needle: &[u8]) -> Option<usize> {
+    hay.windows(needle.len()).position(|w| w == needle)
+}
+
+fn skip_ws(b: &[u8]) -> &[u8] {
+    match b.iter().position(|c| !c.is_ascii_whitespace()) {
+        Some(i) => &b[i..],
+        None => b,
     }
-    Ok((false, NOT_FOUND_OID.into(), NOT_FOUND_VID.into()))
 }

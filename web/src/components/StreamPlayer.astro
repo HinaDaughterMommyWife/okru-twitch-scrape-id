@@ -1,35 +1,32 @@
 ---
+import { vkEmbedSrc } from "../lib/streaming";
+
 interface Props {
-  vkOid: string;
-  vkId: string;
-  hostname: string;
+  vkOid?: string | null;
+  vkId?: string | null;
 }
 
-const { vkOid, vkId, hostname } = Astro.props;
+const { vkOid = null, vkId = null } = Astro.props;
+const src = vkOid && vkId ? vkEmbedSrc(vkOid, vkId) : "";
 ---
 
-<div class="flex h-full flex-col md:flex-row">
-  {/* Video */}
-  <div class="w-full shrink-0 aspect-video md:aspect-auto md:h-full md:flex-1">
-    <iframe
-      title="video"
-      class="h-full w-full border-0"
-      src={`https://vk.com/video_ext.php?oid=${vkOid}&id=${vkId}&hd=4`}
-      width="1920"
-      height="1080"
-      allow="autoplay; encrypted-media; fullscreen; picture-in-picture; screen-wake-lock;"
-      allowfullscreen
-    ></iframe>
-  </div>
+<iframe
+  data-vk-frame
+  data-vk-oid={vkOid || undefined}
+  data-vk-vid={vkId || undefined}
+  title="video"
+  class:list={["relative z-0 h-full w-full border-0 pointer-events-none", src ? "opacity-100" : "opacity-0"]}
+  src={src || undefined}
+  width="1920"
+  height="1080"
+  allow="autoplay; encrypted-media; fullscreen; picture-in-picture; screen-wake-lock;"
+  allowfullscreen
+></iframe>
 
-  {/* Twitch chat */}
-  <div class="min-h-0 w-full flex-1 md:h-full md:flex-none md:w-85" style="padding-bottom: env(safe-area-inset-bottom)">
-    <iframe
-      id="twitch-chat-embed"
-      title="chat"
-      class="h-full w-full border-0"
-      src={`https://www.twitch.tv/embed/thedarkraimola/chat?darkpopout&parent=${hostname}`}
-      referrerpolicy="no-referrer-when-downgrade"
-    ></iframe>
-  </div>
-</div>
+<script>
+  import { attachVkSound } from "../lib/vkPlayer";
+
+  for (const frame of document.querySelectorAll("[data-vk-frame]")) {
+    if (frame instanceof HTMLIFrameElement) attachVkSound(frame);
+  }
+</script>

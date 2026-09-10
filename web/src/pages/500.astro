@@ -1,0 +1,13 @@
+---
+export const prerender = false;
+
+import FallbackPage from "../components/FallbackPage.astro";
+
+Astro.response.headers.set("Cache-Control", "no-store");
+---
+
+<FallbackPage
+  code={500}
+  title="Error del servidor"
+  message="Algo salio mal. Intenta de nuevo en un momento."
+/>

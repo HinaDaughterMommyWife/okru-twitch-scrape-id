@@ -1,0 +1,17 @@
+---
+interface Props {
+  hostname: string;
+}
+
+const { hostname } = Astro.props;
+---
+
+<div class="min-h-0 w-full flex-1 md:h-full md:flex-none md:w-85 group-data-chat-hidden/player:hidden" style="padding-bottom: env(safe-area-inset-bottom)">
+  <iframe
+    id="twitch-chat-embed"
+    title="chat"
+    class="h-full w-full border-0"
+    src={`https://www.twitch.tv/embed/thedarkraimola/chat?darkpopout&parent=${hostname}`}
+    referrerpolicy="no-referrer-when-downgrade"
+  ></iframe>
+</div>

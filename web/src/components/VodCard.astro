@@ -1,0 +1,78 @@
+---
+import { vodWatchPath, type VodItem } from "../lib/streaming";
+
+interface Props {
+  item: VodItem;
+  compact?: boolean;
+  current?: boolean;
+}
+
+const { item, compact = false, current = false } = Astro.props;
+const live = item.live_status.toLowerCase() === "started";
+const href = vodWatchPath(item.owner_id, item.id);
+const unixMs = item.date < 1e12 ? item.date * 1000 : item.date;
+const title = item.title || `video${item.owner_id}_${item.id}`;
+---
+
+<a
+  href={href}
+  data-vod-link
+  data-oid={String(item.owner_id)}
+  data-vid={String(item.id)}
+  class:list={[
+    "group block min-w-0",
+    compact && "flex gap-2 rounded-lg p-1.5 transition hover:bg-white/5",
+    current && "bg-white/10 ring-1 ring-[#9147ff]/50",
+  ]}
+>
+  <div
+    class:list={[
+      "relative overflow-hidden bg-white/5",
+      compact
+        ? "aspect-video w-28 shrink-0 rounded-md ring-1 ring-white/10"
+        : "aspect-video rounded-xl ring-1 ring-white/10 transition group-hover:ring-[#9147ff]/50",
+    ]}
+  >
+    {item.thumb ? (
+      <img
+        src={item.thumb}
+        alt=""
+        class:list={[
+          "h-full w-full object-cover",
+          !compact && "transition duration-300 group-hover:scale-[1.03]",
+        ]}
+        loading="lazy"
+      />
+    ) : (
+      <div class="h-full w-full bg-white/5" />
+    )}
+    {live && (
+      <span class="absolute bottom-1.5 left-1.5 z-10 inline-flex items-center gap-1 rounded-xs bg-[#cc0000] px-1 py-0.75 text-[11px] font-medium leading-none text-white">
+        <span class="size-1.5 shrink-0 rounded-full bg-white"></span>
+        EN DIRECTO
+      </span>
+    )}
+    {!live && item.duration && (
+      <span class="absolute right-1.5 bottom-1.5 rounded bg-black/80 px-1 py-0.5 font-mono text-[10px] tabular-nums text-gray-100 md:text-[11px]">
+        {item.duration}
+      </span>
+    )}
+  </div>
+  <div class:list={[compact ? "min-w-0 py-0.5" : ""]}>
+    <h2
+      class:list={[
+        "font-medium text-gray-100 group-hover:text-white",
+        compact ? "line-clamp-2 text-xs" : "mt-2 line-clamp-2 text-sm",
+      ]}
+    >
+      {title}
+    </h2>
+    <time
+      class:list={["block text-gray-500", compact ? "mt-0.5 text-[11px]" : "mt-0.5 text-xs"]}
+      datetime={new Date(unixMs).toISOString()}
+      data-unix={String(item.date)}
+    >
+      {new Date(unixMs).toISOString().slice(0, 16).replace("T", " ")}
+    </time>
+  </div>
+</a>

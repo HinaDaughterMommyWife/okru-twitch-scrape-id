@@ -227,9 +227,21 @@ async fn run_check(
     chat: &Arc<Mutex<ChatState>>,
 ) {
     match tokio::time::timeout(CHECK_TIMEOUT, async {
-        let (found, oid, vid) = vk::check_and_ids(http, &cfg.idvk).await?;
-        worker_client::post_to_worker(http, &cfg.post_url, &cfg.post_auth, &oid, &vid).await?;
-        Ok::<_, anyhow::Error>(found)
+        let result = vk::prefetch(http, &cfg.idvk).await?;
+        if let Err(e) =
+            worker_client::post_vods(http, &cfg.post_url, &cfg.post_auth, &result.items).await
+        {
+            tracing::error!("VODS POST failed (non-fatal): {e:#}");
+        }
+        worker_client::post_to_worker(
+            http,
+            &cfg.post_url,
+            &cfg.post_auth,
+            &result.vk_oid,
+            &result.vk_id,
+        )
+        .await?;
+        Ok::<_, anyhow::Error>(result.found)
     })
     .await
     {
