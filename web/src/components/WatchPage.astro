@@ -1,0 +1,36 @@
+---
+import "../styles/global.css";
+import type { UserProfile } from "../lib/streaming";
+import ErrorMessage from "./ErrorMessage.astro";
+import WatchStage from "./WatchStage.astro";
+import BraveToast from "./BraveToast.astro";
+
+type Props =
+  | { kind: "error"; message: string }
+  | { kind: "ok"; user: UserProfile; base: string; vkOid: string | null; vkId: string | null };
+
+const props = Astro.props;
+const hostname = Astro.url.hostname;
+const isDev = hostname === "localhost" || hostname === "127.0.0.1";
+const title = props.kind === "ok" ? props.user.display_name : "SapoPerro Ruso";
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/favicon.ico" />
+    <title>{title}</title>
+    <script defer src="https://assets.onedollarstats.com/stonks.js" data-debug={isDev ? "watch.shonensemanal.site" : undefined}></script>
+  </head>
+  <body class="m-0 h-dvh w-screen overflow-hidden bg-[#0e0e10] text-white">
+    {props.kind === "error" && <ErrorMessage message={props.message} />}
+
+    {props.kind === "ok" && (
+      <>
+        <WatchStage hostname={hostname} user={props.user} base={props.base} vkOid={props.vkOid} vkId={props.vkId} />
+        <BraveToast />
+      </>
+    )}
+  </body>
+</html>

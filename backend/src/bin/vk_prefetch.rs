@@ -7,7 +7,9 @@
 //! cargo run --bin vk-prefetch -- --html /tmp/page.html
 //! ```
 
+// Shared with okru-backend; each debug bin only uses part of it.
 #[path = "../vk.rs"]
+#[allow(dead_code)]
 mod vk;
 
 use anyhow::{bail, Context, Result};

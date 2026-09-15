@@ -3,14 +3,17 @@ import StreamPlayer from "./StreamPlayer.astro";
 import TwitchChat from "./TwitchChat.astro";
 import PlayerBadge from "./PlayerBadge.astro";
 import NoStream from "./NoStream.astro";
+import type { UserProfile } from "../lib/streaming";
 
 interface Props {
   hostname: string;
+  user: UserProfile;
+  base: string;
   vkOid: string | null;
   vkId: string | null;
 }
 
-const { hostname, vkOid, vkId } = Astro.props;
+const { hostname, user, base, vkOid, vkId } = Astro.props;
 const playing = Boolean(vkOid && vkId);
 const mode = playing ? "playing" : "waiting";
 ---
@@ -27,7 +30,7 @@ const mode = playing ? "playing" : "waiting";
         data-pane="waiting"
         class="absolute inset-0 z-10 bg-[#0e0e10] transition-opacity duration-500 ease-out"
       >
-        <NoStream />
+        <NoStream user={user} base={base} />
       </div>
     )}
     <StreamPlayer vkOid={vkOid} vkId={vkId} />
@@ -42,7 +45,7 @@ const mode = playing ? "playing" : "waiting";
     />
   </div>
 
-  <TwitchChat hostname={hostname} />
+  <TwitchChat hostname={hostname} channel={user.twitch_channel} />
 </div>
 
 <script>

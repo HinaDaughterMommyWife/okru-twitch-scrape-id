@@ -1,0 +1,25 @@
+[package]
+name = "okru-tui"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "okru-tui"
+path = "src/main.rs"
+required-features = ["tui"]
+
+[features]
+default = ["tui"]
+# Terminal UI. okru-backend disables it and only uses the `db` module.
+tui = ["dep:ratatui"]
+
+[dependencies]
+anyhow = { workspace = true }
+rusqlite = { workspace = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+ratatui = { version = "0.29", optional = true }

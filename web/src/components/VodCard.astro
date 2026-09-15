@@ -3,13 +3,14 @@ import { vodWatchPath, type VodItem } from "../lib/streaming";
 
 interface Props {
   item: VodItem;
+  base: string;
   compact?: boolean;
   current?: boolean;
 }
 
-const { item, compact = false, current = false } = Astro.props;
+const { item, base, compact = false, current = false } = Astro.props;
 const live = item.live_status.toLowerCase() === "started";
-const href = vodWatchPath(item.owner_id, item.id);
+const href = vodWatchPath(base, item.owner_id, item.id);
 const unixMs = item.date < 1e12 ? item.date * 1000 : item.date;
 const title = item.title || `video${item.owner_id}_${item.id}`;
 ---

@@ -9,8 +9,11 @@ web/.astro/
 worker/target/
 worker/build/
 
-# build output - backend (rust)
+# build output - rust workspace (backend, tui, db)
+/target/
 backend/target/
+# dev SQLite (okru-backend / okru-tui debug builds)
+/data/
 # local / native binary + config (make install / make up)
 dist/
 # Oracle Linux 8 aarch64 binary + config (make build-oracle-arm)

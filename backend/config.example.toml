@@ -1,18 +1,21 @@
 # Copy this file next to the okru-backend binary as config.toml and fill in values.
+# Channels (slug, twitch channel, idvk, command aliases, whitelist) live in SQLite — manage them with okru-tui.
 
-idvk = "id1117440596"          # VK profile/community to scrape
-intervalo = 60                 # minutes between loop ticks (once #vk activates the window)
+intervalo = 60                 # minutes between loop ticks (once a command activates the 8h window)
 
 twitchTokenId = ""             # Twitch application client id
 twitchTokenSecret = ""         # Twitch application client secret
-channelTarget = "thedarkraimola"
 botName = "comomegustapadreball"
 
-# === Downstream webhook (where to POST stream IDs) ===
-postURL = "http://localhost:8787/streaming"
+# === Worker (Cloudflare) base URL + Basic Auth token ===
+workerURL = "http://localhost:8787"
 postAuth = ""
 
 # === Local HTTP server (health + OAuth setup) ===
 setupPathKey = ""              # secret path segment; leave empty to auto-generate on first run
 port = 9622
 baseUrl = "http://localhost:9622"
+
+# === Shared with okru-tui (it reads this same file) ===
+ipcPort = 29622                        # local TCP link, 127.0.0.1 only
+webURL = "http://localhost:4321"       # public web base (prod: https://watch.shonensemanal.site)

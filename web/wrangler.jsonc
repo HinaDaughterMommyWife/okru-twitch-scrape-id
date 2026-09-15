@@ -9,6 +9,9 @@
 		"directory": "./dist",
 		"binding": "ASSETS"
 	},
+	"vars": {
+		"DEFAULT_USER": "thedarkraimola"
+	},
 	"observability": {
 		"enabled": true
 	},
@@ -17,5 +20,12 @@
 			"pattern": "watch.shonensemanal.site/*",
 			"zone_name": "shonensemanal.site"
 		}
-	]
+	],
+	"env": {
+		"production": {
+			"observability": {
+				"redact_query_string": false
+			}
+		}
+	}
 }

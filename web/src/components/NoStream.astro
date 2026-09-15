@@ -1,4 +1,13 @@
 ---
+import { vodsPath, type UserProfile } from "../lib/streaming";
+
+interface Props {
+  user: UserProfile;
+  base: string;
+}
+
+const { user, base } = Astro.props;
+
 const ART_POOL = [
   "/shock.webp",
   "/shupo-12.webp",
@@ -21,7 +30,7 @@ for (let i = artSrcs.length - 1; i > 0; i--) {
 const firstArt = artSrcs[0] ?? ART_POOL[0];
 ---
 
-<div data-no-stream class="relative flex h-full w-full flex-col items-center justify-center gap-2 overflow-y-auto px-4 py-3 md:gap-3">
+<div data-no-stream data-user={user.slug} class="relative flex h-full w-full flex-col items-center justify-center gap-2 overflow-y-auto px-4 py-3 md:gap-3">
   <a
     href="https://github.com/HinaDaughterMommyWife/okru-twitch-scrape-id"
     target="_blank"
@@ -48,7 +57,7 @@ const firstArt = artSrcs[0] ?? ART_POOL[0];
       <span id="refresh-wait" class="hidden font-mono text-[0.85em] tabular-nums text-gray-400">6s</span>
     </button>
     <a
-      href="/vods"
+      href={vodsPath(base)}
       target="_blank"
       rel="noopener noreferrer"
       class="inline-flex items-center rounded-full bg-white/10 px-3.5 py-1.5 text-sm font-medium text-gray-100 shadow-md ring-1 ring-white/15 transition hover:bg-white/20 hover:text-white hover:ring-[#9147ff]/50 active:scale-[0.98]"
@@ -57,8 +66,8 @@ const firstArt = artSrcs[0] ?? ART_POOL[0];
     </a>
   </div>
   <div class="flex flex-col text-center gap-1">
-    <p class="text-xs text-gray-500 md:text-sm">Pidele a un Mod o al SapoPerro que escriba <code class="bg-gray-800 text-gray-200 rounded px-1 py-0.5 font-mono text-xs">#vk</code> en el chat de <strong class="twitch-glow font-bold">Twitch</strong></p>
-    <p class="text-[11px] text-gray-600 mb-1 md:text-xs"><code class="bg-gray-800/90 text-gray-100 border border-gray-700 rounded px-1.5 py-0.5 font-mono text-[11px]">#vk</code> solo lo pueden usar moderadores</p>
+    <p class="text-xs text-gray-500 md:text-sm">Pidele a un Mod o a {user.display_name} que escriba <code class="bg-gray-800 text-gray-200 rounded px-1 py-0.5 font-mono text-xs">{user.command}</code> en el chat de <strong class="twitch-glow font-bold">Twitch</strong></p>
+    <p class="text-[11px] text-gray-600 mb-1 md:text-xs"><code class="bg-gray-800/90 text-gray-100 border border-gray-700 rounded px-1.5 py-0.5 font-mono text-[11px]">{user.command}</code> solo lo pueden usar moderadores</p>
     <p class="text-xs text-gray-500 md:text-sm">
       Buscaremos un stream de nuevo en <span id="countdown">01:00</span>
     </p>
@@ -92,6 +101,7 @@ const firstArt = artSrcs[0] ?? ART_POOL[0];
   const refreshBtn = document.getElementById("refresh-stream");
   const refreshWait = document.getElementById("refresh-wait");
   const art = document.getElementById("no-stream-art");
+  const userSlug = document.querySelector<HTMLElement>("[data-no-stream]")?.dataset.user ?? "";
 
   if (
     countdown instanceof HTMLElement &&
@@ -171,7 +181,7 @@ const firstArt = artSrcs[0] ?? ART_POOL[0];
       checking = true;
       paintRefreshWait();
       try {
-        const res = await fetch("/api/lastStream", { cache: "no-store" });
+        const res = await fetch(`/api/lastStream?user=${encodeURIComponent(userSlug)}`, { cache: "no-store" });
         const result = (await res.json()) as StreamingResult;
         const ids = liveStreamIds(result);
         if (!ids) return false;

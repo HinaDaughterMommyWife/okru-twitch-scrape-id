@@ -214,16 +214,6 @@ pub async fn prefetch(client: &reqwest::Client, idvk: &str) -> Result<PrefetchRe
     catalog_from_bytes(&bytes)
 }
 
-/// Same scrape; `(found, oid, vid)` for worker `/streaming`.
-#[allow(dead_code)]
-pub async fn check_and_ids(
-    client: &reqwest::Client,
-    idvk: &str,
-) -> Result<(bool, String, String)> {
-    let result = prefetch(client, idvk).await?;
-    Ok((result.found, result.vk_oid, result.vk_id))
-}
-
 fn find_subslice(hay: &[u8], needle: &[u8]) -> Option<usize> {
     hay.windows(needle.len()).position(|w| w == needle)
 }

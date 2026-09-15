@@ -1,0 +1,16 @@
+---
+export const prerender = false;
+
+import VodsPage from "../../components/VodsPage.astro";
+import { NO_STORE, loadVods, resolveUserParam } from "../../lib/pageData";
+
+const route = resolveUserParam(Astro.params.user, Astro.url, "/vods");
+if ("redirect" in route) return Astro.redirect(route.redirect, 301);
+
+const data = await loadVods(route.slug, Astro.url);
+if (data.kind === "notFound") return Astro.rewrite("/404");
+
+Astro.response.headers.set("Cache-Control", NO_STORE);
+---
+
+<VodsPage {...data} />

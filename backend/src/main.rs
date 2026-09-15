@@ -1,20 +1,26 @@
 mod bot;
+mod check;
 mod config;
 mod credentials;
 mod http;
+mod ipc;
+mod registry;
 mod scheduler;
+mod sync;
 mod vk;
 mod worker_client;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
+use okru_tui::db::Store;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Notify;
+use tokio::sync::{mpsc, watch, Notify};
 use tracing_subscriber::EnvFilter;
 
-use crate::config::Config;
 use crate::credentials::credentials_exist;
+use crate::registry::Snapshot;
 use crate::scheduler::Scheduler;
+use crate::worker_client::WorkerClient;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -34,11 +40,11 @@ async fn main() -> Result<()> {
     };
 
     tracing::info!(
-        "Config OK — idvk={} intervalo={}min channel=#{} bot={}",
-        cfg.idvk,
+        "Config OK — intervalo={}min bot={} worker={} web={}",
         cfg.intervalo,
-        cfg.channel_login(),
-        cfg.bot_login()
+        cfg.bot_login(),
+        cfg.worker_base(),
+        cfg.web_url
     );
     tracing::info!(
         "OAuth setup: {}/{}/setup",
@@ -46,13 +52,51 @@ async fn main() -> Result<()> {
         cfg.setup_path_key
     );
 
+    // SQLite users → snapshot, hot-reloaded by a watcher thread.
+    let db_path = okru_tui::db::default_db_path();
+    let store =
+        Store::open(&db_path).with_context(|| format!("abrir DB {}", db_path.display()))?;
+    let snapshot = Snapshot::from_users(store.list()?);
+    tracing::info!(
+        "DB {} — {} usuarios ({} activos)",
+        db_path.display(),
+        snapshot.total,
+        snapshot.len()
+    );
+    if snapshot.len() == 0 {
+        tracing::warn!("Sin usuarios activos — agrega uno con okru-tui");
+    }
+    let (snapshot_tx, snapshot_rx) = watch::channel(Arc::new(snapshot));
+
+    // okru-tui ↔ backend: `changed` → immediate reload; events flow back to the TUI.
+    let hub = ipc::Hub::new();
+    let (reload_tx, reload_rx) = mpsc::unbounded_channel();
+    tokio::spawn(registry::run_reloader(store, reload_rx, snapshot_tx, Arc::clone(&hub)));
+    {
+        let (hub, rx) = (Arc::clone(&hub), snapshot_rx.clone());
+        let port = cfg.ipc_port;
+        tokio::spawn(async move {
+            if let Err(e) = ipc::serve(port, hub, reload_tx, rx).await {
+                tracing::error!("IPC server error — los cambios del TUI no se aplicarán en caliente: {e:#}");
+            }
+        });
+    }
+
     let http = reqwest::Client::builder()
         .user_agent("okru-backend/0.1")
         .gzip(true)
         .build()?;
+    let worker = WorkerClient::new(http.clone(), cfg.worker_base(), &cfg.post_auth);
+
+    tokio::spawn(sync::run(worker.clone(), snapshot_rx.clone(), Arc::clone(&hub)));
 
     let credentials_ready = Arc::new(Notify::new());
-    let scheduler = Scheduler::new();
+    let scheduler = Scheduler::new(
+        http.clone(),
+        worker.clone(),
+        snapshot_rx.clone(),
+        Duration::from_secs(cfg.intervalo.max(1) * 60),
+    );
 
     let http_state = http::AppState {
         config: Arc::clone(&cfg),
@@ -67,16 +111,6 @@ async fn main() -> Result<()> {
             tracing::error!("HTTP server error: {e:#}");
         }
     });
-
-    // Periodic VK loop — OFF by default; `#vk` opens an 8h window.
-    {
-        let cfg = Arc::clone(&cfg);
-        let http = http.clone();
-        let scheduler = Arc::clone(&scheduler);
-        tokio::spawn(async move {
-            interval_loop(cfg, http, scheduler).await;
-        });
-    }
 
     // Bot lifecycle: wait for credentials, run, restart on drop/OAuth clear.
     loop {
@@ -94,7 +128,16 @@ async fn main() -> Result<()> {
         }
 
         tracing::info!("Starting Twitch bot...");
-        match bot::run_bot(Arc::clone(&cfg), http.clone(), Arc::clone(&scheduler)).await {
+        match bot::run_bot(
+            Arc::clone(&cfg),
+            http.clone(),
+            worker.clone(),
+            Arc::clone(&scheduler),
+            snapshot_rx.clone(),
+            Arc::clone(&hub),
+        )
+        .await
+        {
             Ok(()) => tracing::warn!("Bot IRC stream ended"),
             Err(e) => tracing::error!("Bot error: {e:#}"),
         }
@@ -107,71 +150,6 @@ async fn main() -> Result<()> {
             // Unexpected disconnect — reconnect soon.
             tracing::info!("Reconnecting bot in 5s...");
             tokio::time::sleep(Duration::from_secs(5)).await;
-        }
-    }
-}
-
-async fn interval_loop(cfg: Arc<Config>, http: reqwest::Client, scheduler: Arc<Scheduler>) {
-    let interval = Duration::from_secs(cfg.intervalo.max(1) * 60);
-    tracing::info!(
-        "Interval scheduler ready (default OFF, period={}min, window=8h)",
-        cfg.intervalo
-    );
-
-    loop {
-        if !scheduler.is_running() {
-            break;
-        }
-
-        scheduler.wait_until_active().await;
-        if !scheduler.is_running() {
-            break;
-        }
-
-        // Sleep first so `#vk`'s immediate check is not duplicated by this loop.
-        scheduler.sleep_interval(interval).await;
-
-        if !scheduler.is_running() {
-            break;
-        }
-        if !scheduler.is_active().await {
-            tracing::info!("Ventana de 8h expirada — intervalo apagado");
-            continue;
-        }
-
-        tracing::info!("--- interval tick ---");
-        match vk::prefetch(&http, &cfg.idvk).await {
-            Ok(result) => {
-                tracing::info!(
-                    "interval scrape found={} oid={} vid={} vods={}",
-                    result.found,
-                    result.vk_oid,
-                    result.vk_id,
-                    result.items.len()
-                );
-                if let Err(e) = worker_client::post_vods(
-                    &http,
-                    &cfg.post_url,
-                    &cfg.post_auth,
-                    &result.items,
-                )
-                .await
-                {
-                    tracing::error!("interval VODS POST failed: {e:#}");
-                }
-                if let Err(e) = worker_client::post_to_worker(
-                    &http,
-                    &cfg.post_url,
-                    &cfg.post_auth,
-                    &result.vk_oid,
-                    &result.vk_id,
-                )
-                .await
-                {
-                    tracing::error!("interval POST failed: {e:#}");
-                }
-            }
-            Err(e) => tracing::error!("interval scrape failed: {e:#}"),
         }
     }
 }

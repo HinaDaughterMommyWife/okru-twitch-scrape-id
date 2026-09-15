@@ -1,105 +1,80 @@
-//! Activity window for the periodic VK check loop.
+//! Per-user activity windows for the periodic VK check loop.
 //!
-//! Default: OFF.
-//! On `#vk`: activate / refresh an 8-hour window from the last command.
-//! After 8h without `#vk`: the loop turns OFF again.
+//! Default: OFF for everyone.
+//! On a chat command: activate / refresh an 8-hour window for that user and start its loop.
+//! After 8h without commands (or if the user is removed/disabled) the loop ends.
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tokio::sync::{Notify, RwLock};
+
+use crate::check::run_check;
+use crate::registry::SnapshotRx;
+use crate::worker_client::WorkerClient;
 
 const WINDOW: Duration = Duration::from_secs(8 * 60 * 60);
 
-#[derive(Debug)]
 pub struct Scheduler {
-    /// Last time a privileged `#vk` was received (None = never / window expired).
-    last_command: RwLock<Option<Instant>>,
-    /// Wakes the loop when `#vk` arrives while sleeping.
-    notify: Notify,
-    /// Soft stop flag for clean shutdown.
-    running: AtomicBool,
+    /// user id → last command. Presence means that user's loop is running.
+    windows: Mutex<HashMap<i64, Instant>>,
+    http: reqwest::Client,
+    worker: WorkerClient,
+    rx: SnapshotRx,
+    interval: Duration,
 }
 
 impl Scheduler {
-    pub fn new() -> Arc<Self> {
+    pub fn new(http: reqwest::Client, worker: WorkerClient, rx: SnapshotRx, interval: Duration) -> Arc<Self> {
+        tracing::info!(
+            "Interval scheduler ready (default OFF, period={}min, window=8h, por usuario)",
+            interval.as_secs() / 60
+        );
         Arc::new(Self {
-            last_command: RwLock::new(None),
-            notify: Notify::new(),
-            running: AtomicBool::new(true),
+            windows: Mutex::new(HashMap::new()),
+            http,
+            worker,
+            rx,
+            interval,
         })
     }
 
-    /// Called when `#vk` fires — (re)starts the 8h window.
-    pub async fn bump(&self) {
-        let mut slot = self.last_command.write().await;
-        *slot = Some(Instant::now());
-        drop(slot);
-        self.notify.notify_one();
-        tracing::info!("Intervalo activado / reiniciado (ventana 8h)");
-    }
-
-    #[allow(dead_code)]
-    pub fn stop(&self) {
-        self.running.store(false, Ordering::SeqCst);
-        self.notify.notify_one();
-    }
-
-    pub fn is_running(&self) -> bool {
-        self.running.load(Ordering::SeqCst)
-    }
-
-    /// True while inside the 8h activity window.
-    pub async fn is_active(&self) -> bool {
-        let slot = self.last_command.read().await;
-        match *slot {
-            Some(t) => t.elapsed() < WINDOW,
-            None => false,
+    /// Called when a command fires — (re)starts the 8h window for this user.
+    pub fn bump(self: &Arc<Self>, user_id: i64, slug: &str) {
+        let started = self
+            .windows
+            .lock()
+            .unwrap()
+            .insert(user_id, Instant::now())
+            .is_none();
+        tracing::info!("[{slug}] Intervalo activado / reiniciado (ventana 8h)");
+        if started {
+            let this = Arc::clone(self);
+            tokio::spawn(async move { this.interval_loop(user_id).await });
         }
     }
 
-    /// Remaining time in the window, if active.
-    #[allow(dead_code)]
-    pub async fn remaining(&self) -> Option<Duration> {
-        let slot = self.last_command.read().await;
-        match *slot {
-            Some(t) => {
-                let elapsed = t.elapsed();
-                if elapsed < WINDOW {
-                    Some(WINDOW - elapsed)
-                } else {
-                    None
-                }
-            }
-            None => None,
-        }
-    }
-
-    /// Wait until the window becomes active (a `#vk` arrives), or shutdown.
-    pub async fn wait_until_active(&self) {
+    /// Sleeps first so the command's immediate check is not duplicated.
+    async fn interval_loop(self: Arc<Self>, user_id: i64) {
         loop {
-            if !self.is_running() {
-                return;
-            }
-            if self.is_active().await {
-                return;
-            }
-            // Expire stale timestamp if any
+            tokio::time::sleep(self.interval).await;
+
+            let entry = self.rx.borrow().by_id(user_id);
             {
-                let mut slot = self.last_command.write().await;
-                if let Some(t) = *slot {
-                    if t.elapsed() >= WINDOW {
-                        *slot = None;
-                        tracing::info!("Ventana de 8h expirada — intervalo apagado");
-                    }
+                let mut windows = self.windows.lock().unwrap();
+                let active = windows.get(&user_id).is_some_and(|t| t.elapsed() < WINDOW);
+                if !active || entry.is_none() {
+                    windows.remove(&user_id);
+                    let reason = if entry.is_none() { "usuario eliminado/desactivado" } else { "ventana de 8h expirada" };
+                    tracing::info!("Intervalo apagado para user_id={user_id} ({reason})");
+                    return;
                 }
             }
-            self.notify.notified().await;
-        }
-    }
+            let Some(entry) = entry else { return };
 
-    /// Sleep for `interval` (does not wake on `#vk` — avoids double-scrape with the command handler).
-    pub async fn sleep_interval(&self, interval: Duration) {
-        tokio::time::sleep(interval).await;
+            tracing::info!("[{}] --- interval tick ---", entry.user.slug);
+            if let Err(e) = run_check(&self.http, &self.worker, &entry).await {
+                tracing::error!("[{}] interval check failed: {e:#}", entry.user.slug);
+            }
+        }
     }
 }

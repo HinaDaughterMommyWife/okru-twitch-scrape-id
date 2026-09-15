@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+members = ["backend", "tui"]
+# worker/ is a separate wasm crate (wrangler / worker-build) and stays out.
+exclude = ["worker"]
+
+[workspace.dependencies]
+anyhow = "1"
+rusqlite = { version = "0.37", features = ["bundled"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

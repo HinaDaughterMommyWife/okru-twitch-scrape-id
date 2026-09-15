@@ -16,7 +16,9 @@ name = "vk-prefetch"
 path = "src/bin/vk_prefetch.rs"
 
 [dependencies]
-anyhow = "1"
+anyhow = { workspace = true }
+# Only the SQLite layer (`okru_tui::db`), without ratatui.
+okru-tui = { path = "../tui", default-features = false }
 async-trait = "0.1"
 axum = "0.8"
 base64 = "0.22"
@@ -34,7 +36,3 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 twitch-irc = { version = "5", default-features = false, features = ["transport-tcp", "transport-tcp-rustls-webpki-roots", "refreshing-token-rustls-webpki-roots"] }
 urlencoding = "2"
 
-[profile.release]
-lto = true
-codegen-units = 1
-strip = true

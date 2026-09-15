@@ -1,33 +1,30 @@
 export const prerender = false;
 
 import type { APIRoute } from "astro";
-import { env } from "cloudflare:workers";
 import { fetchStreamingId } from "../../lib/streaming";
+import { NO_STORE, workerEnv } from "../../lib/pageData";
 
-const CACHE_CONTROL = "public, s-maxage=5";
+const headers = {
+  "Content-Type": "application/json",
+  "Cache-Control": NO_STORE,
+};
 
-export const GET: APIRoute = async () => {
-  const workerUrl = env.WORKER_URL ?? "";
-  const authToken = env.WORKER_AUTH_TOKEN ?? "";
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), { status, headers });
+}
 
-  const headers = {
-    "Content-Type": "application/json",
-    "Cache-Control": CACHE_CONTROL,
-  };
+/** `GET /api/lastStream?user=<slug>` — defaults to DEFAULT_USER. */
+export const GET: APIRoute = async ({ url }) => {
+  const { workerUrl, authToken, defaultUser } = workerEnv();
 
-  if (!workerUrl || !authToken) {
-    return new Response(
-      JSON.stringify({
-        ok: false,
-        error: "Configuración incompleta, comuníquese con el administrador.",
-      }),
-      { status: 503, headers },
-    );
+  if (!workerUrl || !authToken || !defaultUser) {
+    return json({ ok: false, error: "Configuración incompleta, comuníquese con el administrador." }, 503);
   }
 
-  const result = await fetchStreamingId(workerUrl, authToken);
-  return new Response(JSON.stringify(result), {
-    status: 200,
-    headers,
-  });
+  const slug = (url.searchParams.get("user") || defaultUser).toLowerCase();
+  if (!/^[a-z0-9_-]{1,32}$/.test(slug)) {
+    return json({ ok: false, error: "invalid user" }, 400);
+  }
+
+  return json(await fetchStreamingId(workerUrl, authToken, slug));
 };

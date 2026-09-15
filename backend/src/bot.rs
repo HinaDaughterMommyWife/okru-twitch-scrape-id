@@ -1,10 +1,12 @@
-//! Twitch IRC bot via twitch-irc crate.
-//! - Command: `#vk` (mods + broadcaster only)
-//! - Debounce 40s: first `#vk` runs; further `#vk` from any mod ignored until done or 40s
+//! Twitch IRC bot via twitch-irc crate — one connection, many channels.
+//! - Channels, command aliases and whitelist come from the SQLite snapshot (hot-reloaded)
+//! - Commands: per-user aliases (mods + broadcaster + whitelisted users)
+//! - Debounce 40s per channel: first command runs; further ones ignored until done or 40s
 //! - Safe-send: respects slow-mode + emote-only from ROOMSTATE; action always runs even if send fails
 //! - Token refresh handled by RefreshingLoginCredentials
 
-use anyhow::{Context, Result};
+use anyhow::Result;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -13,11 +15,14 @@ use twitch_irc::login::RefreshingLoginCredentials;
 use twitch_irc::message::ServerMessage;
 use twitch_irc::{ClientConfig, SecureTCPTransport, TwitchIRCClient};
 
+use crate::check::run_check;
 use crate::config::Config;
 use crate::credentials::FileTokenStorage;
+use crate::ipc::Hub;
+use okru_tui::ipc::{CheckOutcome, Role, ServerMsg};
+use crate::registry::{SnapshotRx, UserEntry};
 use crate::scheduler::Scheduler;
-use crate::vk;
-use crate::worker_client;
+use crate::worker_client::WorkerClient;
 
 const DEBOUNCE_WINDOW: Duration = Duration::from_secs(40);
 const CHECK_TIMEOUT: Duration = Duration::from_secs(40);
@@ -90,25 +95,28 @@ impl ChatState {
     }
 }
 
-struct BotHandle {
+/// Per-channel runtime: chat constraints + command debounce.
+struct ChannelRuntime {
+    chat: Mutex<ChatState>,
     checking: AtomicBool,
-    check_start: Mutex<Option<Instant>>,
+    check_start: std::sync::Mutex<Option<Instant>>,
 }
 
-impl BotHandle {
+impl ChannelRuntime {
     fn new() -> Arc<Self> {
         Arc::new(Self {
+            chat: Mutex::new(ChatState::new()),
             checking: AtomicBool::new(false),
-            check_start: Mutex::new(None),
+            check_start: std::sync::Mutex::new(None),
         })
     }
 
-    /// Returns true if this `#vk` should run.
-    /// While a check is in flight and < DEBOUNCE_WINDOW have elapsed, all other `#vk` are ignored
-    /// (any moderator). After that the lock is force-released so a stuck check can't block forever.
-    async fn try_begin_check(&self) -> bool {
+    /// Returns true if this command should run.
+    /// While a check is in flight and < DEBOUNCE_WINDOW have elapsed, all other commands in this
+    /// channel are ignored. After that the lock is force-released so a stuck check can't block forever.
+    fn try_begin_check(&self) -> bool {
+        let mut start = self.check_start.lock().unwrap();
         if self.checking.load(Ordering::SeqCst) {
-            let start = self.check_start.lock().await;
             if let Some(t) = *start {
                 if t.elapsed() < DEBOUNCE_WINDOW {
                     return false;
@@ -120,7 +128,7 @@ impl BotHandle {
             }
         }
         self.checking.store(true, Ordering::SeqCst);
-        *self.check_start.lock().await = Some(Instant::now());
+        *start = Some(Instant::now());
         true
     }
 
@@ -185,66 +193,40 @@ async fn safe_send(
     }
 }
 
-fn is_privileged(msg: &twitch_irc::message::PrivmsgMessage) -> bool {
-    msg.badges
-        .iter()
-        .any(|b| b.name == "moderator" || b.name == "broadcaster")
+/// Why this chat user may trigger commands (`None` = not allowed).
+fn privilege(msg: &twitch_irc::message::PrivmsgMessage, entry: &UserEntry) -> Option<Role> {
+    let has_badge = |name: &str| msg.badges.iter().any(|b| b.name == name);
+    if has_badge("broadcaster") {
+        Some(Role::Broadcaster)
+    } else if has_badge("moderator") {
+        Some(Role::Mod)
+    } else if entry.is_whitelisted(&msg.sender.login) {
+        Some(Role::Whitelist)
+    } else {
+        None
+    }
 }
 
-/// Invisible / format chars that Twitch clients sometimes append (e.g. U+034F).
-fn is_invisible_char(c: char) -> bool {
-    c.is_control()
-        || matches!(
-            c,
-            '\u{00AD}' // soft hyphen
-                | '\u{034F}' // combining grapheme joiner — seen in chat as `#vk ͏`
-                | '\u{061C}' // arabic letter mark
-                | '\u{180E}' // mongolian vowel separator
-                | '\u{200B}'..= '\u{200F}' // zwsp, zwnj, zwj, lrm, rlm
-                | '\u{202A}'..= '\u{202E}' // bidi overrides
-                | '\u{2060}'..= '\u{2064}' // word joiner, etc.
-                | '\u{2066}'..= '\u{206F}'
-                | '\u{FEFF}' // bom / zwnbsp
-                | '\u{E0000}'..= '\u{E007F}' // tags
-        )
-}
-
-/// True for `#vk` ignoring case, whitespace and invisible junk.
-fn is_vk_command(raw: &str) -> bool {
-    let cleaned: String = raw
-        .chars()
-        .filter(|&c| !c.is_whitespace() && !is_invisible_char(c))
-        .flat_map(|c| c.to_lowercase())
-        .collect();
-    cleaned == "#vk"
-}
-
-async fn run_check(
+async fn reply_check(
     http: &reqwest::Client,
-    cfg: &Config,
+    worker: &WorkerClient,
+    entry: &UserEntry,
     client: &Client,
-    channel: &str,
-    chat: &Arc<Mutex<ChatState>>,
+    runtime: &ChannelRuntime,
+    hub: &Hub,
 ) {
-    match tokio::time::timeout(CHECK_TIMEOUT, async {
-        let result = vk::prefetch(http, &cfg.idvk).await?;
-        if let Err(e) =
-            worker_client::post_vods(http, &cfg.post_url, &cfg.post_auth, &result.items).await
-        {
-            tracing::error!("VODS POST failed (non-fatal): {e:#}");
-        }
-        worker_client::post_to_worker(
-            http,
-            &cfg.post_url,
-            &cfg.post_auth,
-            &result.vk_oid,
-            &result.vk_id,
-        )
-        .await?;
-        Ok::<_, anyhow::Error>(result.found)
-    })
-    .await
-    {
+    let channel = &entry.user.twitch_channel;
+    let chat = &runtime.chat;
+    let result = tokio::time::timeout(CHECK_TIMEOUT, run_check(http, worker, entry)).await;
+    let (outcome, detail) = match &result {
+        Ok(Ok(true)) => (CheckOutcome::Live, None),
+        Ok(Ok(false)) => (CheckOutcome::Offline, None),
+        Ok(Err(e)) => (CheckOutcome::Error, Some(format!("{e:#}"))),
+        Err(_) => (CheckOutcome::Timeout, None),
+    };
+    hub.emit(ServerMsg::CheckResult { slug: entry.user.slug.clone(), outcome, detail });
+
+    match result {
         Ok(Ok(true)) => {
             safe_send(
                 client,
@@ -266,7 +248,7 @@ async fn run_check(
             .await;
         }
         Ok(Err(e)) => {
-            tracing::error!("Check error: {e:#}");
+            tracing::error!("[{}] Check error: {e:#}", entry.user.slug);
             safe_send(
                 client,
                 channel,
@@ -277,7 +259,11 @@ async fn run_check(
             .await;
         }
         Err(_) => {
-            tracing::warn!("Check timed out after {}s", CHECK_TIMEOUT.as_secs());
+            tracing::warn!(
+                "[{}] Check timed out after {}s",
+                entry.user.slug,
+                CHECK_TIMEOUT.as_secs()
+            );
             safe_send(
                 client,
                 channel,
@@ -290,11 +276,41 @@ async fn run_check(
     }
 }
 
+fn join_channels(client: &Client, previous: &HashSet<String>, wanted: &HashSet<String>) {
+    let sorted = |set: &HashSet<String>| {
+        let mut v: Vec<String> = set.iter().cloned().collect();
+        v.sort();
+        v
+    };
+    let added: HashSet<String> = wanted.difference(previous).cloned().collect();
+    let removed: HashSet<String> = previous.difference(wanted).cloned().collect();
+    tracing::info!(
+        "Canales: {:?} (+{:?} -{:?})",
+        sorted(wanted),
+        sorted(&added),
+        sorted(&removed)
+    );
+    if let Err(e) = client.set_wanted_channels(wanted.clone()) {
+        tracing::error!("set_wanted_channels failed: {e}");
+    }
+}
+
+fn runtime_for(runtimes: &mut HashMap<String, Arc<ChannelRuntime>>, channel: &str) -> Arc<ChannelRuntime> {
+    Arc::clone(
+        runtimes
+            .entry(channel.to_string())
+            .or_insert_with(ChannelRuntime::new),
+    )
+}
+
 /// Connect to Twitch IRC and process messages until the receiver closes.
 pub async fn run_bot(
     cfg: Arc<Config>,
     http: reqwest::Client,
+    worker: WorkerClient,
     scheduler: Arc<Scheduler>,
+    mut rx: SnapshotRx,
+    hub: Arc<Hub>,
 ) -> Result<()> {
     let storage = FileTokenStorage::new();
     let credentials = RefreshingLoginCredentials::init_with_username(
@@ -307,84 +323,121 @@ pub async fn run_bot(
     let config = ClientConfig::new_simple(credentials);
     let (mut incoming, client) = TwitchIRCClient::<SecureTCPTransport, Creds>::new(config);
 
-    let channel = cfg.channel_login();
-    client
-        .join(channel.clone())
-        .context("join channel")?;
+    let bot_login = cfg.bot_login();
+    let mut channels = rx.borrow_and_update().channels();
+    join_channels(&client, &HashSet::new(), &channels);
+    tracing::info!("Bot ready — nick={bot_login}");
 
-    tracing::info!(
-        "Bot ready — nick={}, channel=#{}",
-        cfg.bot_login(),
-        channel
-    );
+    let mut runtimes: HashMap<String, Arc<ChannelRuntime>> = HashMap::new();
 
-    let handle = BotHandle::new();
-    let chat = Arc::new(Mutex::new(ChatState::new()));
+    loop {
+        let message = tokio::select! {
+            message = incoming.recv() => match message {
+                Some(m) => m,
+                None => break,
+            },
+            changed = rx.changed() => {
+                if changed.is_err() {
+                    break;
+                }
+                let next = rx.borrow_and_update().channels();
+                if next != channels {
+                    join_channels(&client, &channels, &next);
+                    runtimes.retain(|c, _| next.contains(c));
+                    channels = next;
+                }
+                continue;
+            }
+        };
 
-    while let Some(message) = incoming.recv().await {
         match message {
+            // Twitch confirms our own JOIN/PART: proof the bot is really in the channel.
+            ServerMessage::Join(j) if j.user_login == bot_login => {
+                tracing::info!("✓ JOIN #{}", j.channel_login);
+                hub.emit(ServerMsg::Joined { channel: j.channel_login });
+            }
+            ServerMessage::Part(p) if p.user_login == bot_login => {
+                tracing::info!("✓ PART #{}", p.channel_login);
+                hub.emit(ServerMsg::Parted { channel: p.channel_login });
+            }
             ServerMessage::RoomState(rs) => {
-                chat.lock().await.apply_roomstate(&rs);
+                let runtime = runtime_for(&mut runtimes, &rs.channel_login);
+                runtime.chat.lock().await.apply_roomstate(&rs);
             }
             ServerMessage::Notice(n) => {
-                chat.lock()
-                    .await
-                    .apply_notice(n.message_id.as_deref(), &n.message_text);
                 tracing::debug!("NOTICE {:?}: {}", n.channel_login, n.message_text);
+                if let Some(channel) = &n.channel_login {
+                    let runtime = runtime_for(&mut runtimes, channel);
+                    runtime
+                        .chat
+                        .lock()
+                        .await
+                        .apply_notice(n.message_id.as_deref(), &n.message_text);
+                }
             }
             ServerMessage::Privmsg(msg) => {
-                if !is_vk_command(&msg.message_text) {
-                    // Help diagnose near-misses like `#vk` + invisible chars
-                    let lower = msg.message_text.to_lowercase();
-                    if lower.contains("vk") && lower.contains('#') {
-                        tracing::debug!(
-                            "Near-miss #vk ignored raw={:?} from {}",
-                            msg.message_text,
-                            msg.sender.login
-                        );
-                    }
+                // Read the latest snapshot per message: alias/whitelist edits apply instantly.
+                let Some(entry) = rx.borrow().by_channel(&msg.channel_login) else {
+                    continue;
+                };
+                if !entry.matches_command(&msg.message_text) {
                     continue;
                 }
+                let slug = entry.user.slug.clone();
 
-                if !is_privileged(&msg) {
+                let Some(role) = privilege(&msg, &entry) else {
                     tracing::debug!(
-                        "Ignored #vk from non-privileged user: {}",
+                        "[{slug}] Ignored command from non-privileged user: {}",
                         msg.sender.login
                     );
                     continue;
-                }
+                };
 
-                if !handle.try_begin_check().await {
+                let runtime = runtime_for(&mut runtimes, &msg.channel_login);
+                let accepted = runtime.try_begin_check();
+                hub.emit(ServerMsg::CommandUsed {
+                    slug: slug.clone(),
+                    channel: msg.channel_login.clone(),
+                    user: msg.sender.login.clone(),
+                    role,
+                    command: msg.message_text.trim().to_string(),
+                    accepted,
+                });
+                if !accepted {
                     tracing::info!(
-                        "Debounce: check in progress (<{}s), ignoring #vk from {}",
+                        "[{slug}] Debounce: check in progress (<{}s), ignoring command from {}",
                         DEBOUNCE_WINDOW.as_secs(),
                         msg.sender.login
                     );
                     continue;
                 }
 
-                // Activate / refresh the 8h interval window
-                scheduler.bump().await;
+                tracing::info!(
+                    "[{slug}] Command {:?} from {} ({})",
+                    msg.message_text.trim(),
+                    msg.sender.login,
+                    role.label()
+                );
+                // Activate / refresh the 8h interval window for this user
+                scheduler.bump(entry.user.id, &slug);
 
-                let chan = msg.channel_login.clone();
                 let http = http.clone();
-                let cfg = Arc::clone(&cfg);
+                let worker = worker.clone();
                 let client = client.clone();
-                let handle = Arc::clone(&handle);
-                let chat = Arc::clone(&chat);
+                let hub = Arc::clone(&hub);
 
                 // Spawn so the IRC loop stays free; keep greeting → check order.
                 tokio::spawn(async move {
                     safe_send(
                         &client,
-                        &chan,
-                        &chat,
+                        &entry.user.twitch_channel,
+                        &runtime.chat,
                         "Buscando streaming... espera un momento 👀",
                         Some("TTours"),
                     )
                     .await;
-                    run_check(&http, &cfg, &client, &chan, &chat).await;
-                    handle.end_check();
+                    reply_check(&http, &worker, &entry, &client, &runtime, &hub).await;
+                    runtime.end_check();
                 });
             }
             _ => {}

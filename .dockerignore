@@ -1,0 +1,9 @@
+target/
+**/target/
+dist/
+arm/
+data/
+web/
+worker/
+logs/
+.git/

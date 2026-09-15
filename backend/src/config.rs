@@ -3,40 +3,43 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const TEMPLATE: &str = r#"# Copy / edit this file next to the okru-backend binary and fill in values.
+use okru_tui::ipc::DEFAULT_PORT as DEFAULT_IPC_PORT;
 
-idvk = "id1117440596"          # VK profile/community to scrape
-intervalo = 60                 # minutes between loop ticks (once #vk activates the window)
+const TEMPLATE: &str = r#"# Copy / edit this file next to the okru-backend binary and fill in values.
+# Channels (slug, twitch channel, idvk, command aliases, whitelist) live in SQLite — use okru-tui.
+
+intervalo = 60                 # minutes between loop ticks (once a command activates the 8h window)
 
 twitchTokenId = ""             # Twitch application client id
 twitchTokenSecret = ""         # Twitch application client secret
-channelTarget = "thedarkraimola"
 botName = "comomegustapadreball"
 
-# === Downstream webhook (where to POST stream IDs) ===
-postURL = "http://localhost:8787/streaming"
+# === Worker (Cloudflare) base URL + Basic Auth token ===
+workerURL = "http://localhost:8787"
 postAuth = ""
 
 # === Local HTTP server (health + OAuth setup) ===
 setupPathKey = ""              # secret path segment; leave empty to auto-generate on first run
 port = 9622
 baseUrl = "http://localhost:9622"
+
+# === Shared with okru-tui (it reads this same file) ===
+ipcPort = 29622                        # local TCP link, 127.0.0.1 only
+webURL = "http://localhost:4321"       # public web base (prod: https://watch.shonensemanal.site)
 "#;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
-    pub idvk: String,
     pub intervalo: u64,
     #[serde(rename = "twitchTokenId")]
     pub twitch_token_id: String,
     #[serde(rename = "twitchTokenSecret")]
     pub twitch_token_secret: String,
-    #[serde(rename = "channelTarget")]
-    pub channel_target: String,
     #[serde(rename = "botName")]
     pub bot_name: String,
-    #[serde(rename = "postURL")]
-    pub post_url: String,
+    /// Worker base URL, e.g. `http://localhost:8787`.
+    #[serde(rename = "workerURL")]
+    pub worker_url: String,
     #[serde(rename = "postAuth")]
     pub post_auth: String,
     #[serde(rename = "setupPathKey", default)]
@@ -45,6 +48,12 @@ pub struct Config {
     pub port: u16,
     #[serde(rename = "baseUrl", default = "default_base_url")]
     pub base_url: String,
+    /// Local TCP port where okru-tui notifies changes (bound to 127.0.0.1).
+    #[serde(rename = "ipcPort", default = "default_ipc_port")]
+    pub ipc_port: u16,
+    /// Public web base; shown by okru-tui and in startup logs.
+    #[serde(rename = "webURL", default = "default_web_url")]
+    pub web_url: String,
 }
 
 fn default_port() -> u16 {
@@ -55,12 +64,17 @@ fn default_base_url() -> String {
     "http://localhost:9622".into()
 }
 
+fn default_ipc_port() -> u16 {
+    DEFAULT_IPC_PORT
+}
+
+fn default_web_url() -> String {
+    okru_tui::config::DEFAULT_WEB_URL.into()
+}
+
 impl Config {
     pub fn validate(&self) -> Result<()> {
         let mut missing = Vec::new();
-        if self.idvk.trim().is_empty() {
-            missing.push("idvk");
-        }
         if self.intervalo == 0 {
             missing.push("intervalo (must be >= 1)");
         }
@@ -70,17 +84,17 @@ impl Config {
         if self.twitch_token_secret.trim().is_empty() {
             missing.push("twitchTokenSecret");
         }
-        if self.channel_target.trim().is_empty() {
-            missing.push("channelTarget");
-        }
         if self.bot_name.trim().is_empty() {
             missing.push("botName");
         }
-        if self.post_url.trim().is_empty() {
-            missing.push("postURL");
+        if self.worker_url.trim().is_empty() {
+            missing.push("workerURL");
         }
         if self.post_auth.trim().is_empty() {
             missing.push("postAuth");
+        }
+        if self.ipc_port == 0 || self.ipc_port == self.port {
+            missing.push("ipcPort (>= 1 y distinto de port)");
         }
         if !missing.is_empty() {
             bail!(
@@ -91,29 +105,27 @@ impl Config {
         Ok(())
     }
 
-    pub fn channel_login(&self) -> String {
-        self.channel_target.trim().trim_start_matches('#').to_lowercase()
-    }
-
     pub fn bot_login(&self) -> String {
         self.bot_name.trim().to_lowercase()
     }
+
+    /// `http://host/` → `http://host`
+    pub fn worker_base(&self) -> String {
+        self.worker_url.trim().trim_end_matches('/').to_string()
+    }
 }
 
-/// Directory that contains the executable (or cwd as fallback).
-pub fn exe_dir() -> PathBuf {
-    std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
-}
-
+/// `OKRU_CONFIG` or `config.toml` next to the binary (same resolution as okru-tui).
 pub fn config_path() -> PathBuf {
-    exe_dir().join("config.toml")
+    okru_tui::db::default_config_path()
 }
 
+/// Lives next to config.toml.
 pub fn credentials_path() -> PathBuf {
-    exe_dir().join("credentials.json")
+    config_path()
+        .parent()
+        .map(|dir| dir.join("credentials.json"))
+        .unwrap_or_else(|| PathBuf::from("credentials.json"))
 }
 
 /// Load config.toml next to the binary. If missing, write a template and exit guidance.
@@ -170,4 +182,16 @@ fn random_path_key() -> String {
         .map(|d| d.as_nanos())
         .unwrap_or(0);
     format!("{:x}", nanos ^ 0xa5a5_c3c3_dead_beef)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_template() {
+        let cfg: Config = toml::from_str(TEMPLATE).unwrap();
+        assert_eq!(cfg.worker_base(), "http://localhost:8787");
+        assert_eq!(cfg.ipc_port, DEFAULT_IPC_PORT);
+    }
 }

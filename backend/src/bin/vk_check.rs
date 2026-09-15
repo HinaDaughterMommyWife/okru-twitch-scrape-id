@@ -1,4 +1,4 @@
-//! One-shot VK scrape: same path as `vk::check_and_ids`.
+//! One-shot VK scrape: same path as the bot (`vk::prefetch`).
 //! No bot, OAuth, scheduler, or worker POST.
 //!
 //! ```text
@@ -6,7 +6,9 @@
 //! cargo run --bin vk-check -- https://vk.com/id1117440596
 //! ```
 
+// Shared with okru-backend; each debug bin only uses part of it.
 #[path = "../vk.rs"]
+#[allow(dead_code)]
 mod vk;
 
 use anyhow::Result;
@@ -25,7 +27,7 @@ async fn main() -> Result<()> {
         eprintln!(
             "Usage: vk-check [idvk]\n\
              \n\
-             Runs vk::check_and_ids against a VK profile/community.\n\
+             Runs vk::prefetch against a VK profile/community.\n\
              Default idvk: id1117440596\n\
              \n\
              Examples:\n\
@@ -45,11 +47,12 @@ async fn main() -> Result<()> {
         .gzip(true)
         .build()?;
 
-    tracing::info!("vk::check_and_ids idvk={idvk}");
-    let (found, oid, vid) = vk::check_and_ids(&http, &idvk).await?;
+    tracing::info!("vk::prefetch idvk={idvk}");
+    let result = vk::prefetch(&http, &idvk).await?;
 
-    println!("found={found}");
-    println!("vk_oid={oid}");
-    println!("vk_id={vid}");
+    println!("found={}", result.found);
+    println!("vk_oid={}", result.vk_oid);
+    println!("vk_id={}", result.vk_id);
+    println!("vods={}", result.items.len());
     Ok(())
 }

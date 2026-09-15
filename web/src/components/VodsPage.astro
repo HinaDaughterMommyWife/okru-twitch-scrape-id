@@ -1,0 +1,276 @@
+---
+import "../styles/global.css";
+import type { UserProfile, VodItem } from "../lib/streaming";
+import StreamPlayer from "./StreamPlayer.astro";
+import VodCard from "./VodCard.astro";
+import PlayerBadge from "./PlayerBadge.astro";
+
+type Props =
+  | { kind: "error"; message: string }
+  | {
+      kind: "ok";
+      user: UserProfile;
+      base: string;
+      items: VodItem[];
+      playing: { vkOid: string; vkId: string } | null;
+    };
+
+const props = Astro.props;
+const ok = props.kind === "ok";
+const base = ok ? props.base : "";
+const items = ok ? props.items : [];
+const playing = ok ? props.playing : null;
+const title = ok ? props.user.display_name : "SapoPerro Ruso";
+const watching = Boolean(playing);
+const empty = items.length === 0 && !watching;
+---
+
+<html lang="es" class="scrollbar-thin overflow-x-hidden">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/favicon.ico" />
+    <title>VODs · {title}</title>
+  </head>
+  <body
+    data-vods-page
+    data-base={base}
+    data-mode={watching ? "watch" : "grid"}
+    class:list={[
+      "scrollbar-thin m-0 w-full overflow-x-hidden bg-[#0e0e10] text-white",
+      watching ? "flex h-dvh flex-col overflow-hidden" : "min-h-dvh",
+    ]}
+  >
+    <header
+      data-vods-header
+      class:list={[
+        "flex w-full items-start justify-between gap-4 px-4 py-4 md:px-6",
+        watching ? "hidden" : "mx-auto max-w-7xl",
+      ]}
+    >
+      <div class="min-w-0">
+        <h1 class="text-lg font-semibold tracking-tight text-gray-100">VODs</h1>
+        <p data-vods-note class:list={["mt-1 max-w-xl text-xs text-gray-500 md:text-sm", watching && "hidden"]}>
+          Nota: este listado proviene de la propia página rusa. Con el tiempo los VODs pueden desaparecer; toma precauciones.
+        </p>
+      </div>
+      <a
+        href={base || "/"}
+        class="inline-flex shrink-0 items-center rounded-full bg-white/10 px-3 py-1.5 text-sm font-medium text-gray-100 ring-1 ring-white/15 transition hover:bg-white/20 hover:ring-[#9147ff]/50"
+      >
+        Stream
+      </a>
+    </header>
+
+    {empty ? (
+      <div data-vods-empty class="flex min-h-[70dvh] flex-col items-center justify-center gap-3 px-4">
+        <img
+          src="/shock.webp"
+          alt=""
+          width="192"
+          height="192"
+          class="w-40 opacity-40 select-none pointer-events-none md:w-48"
+          style="filter: grayscale(50%)"
+        />
+        <p class="text-gray-400">{ok ? "No hay VODs" : props.message}</p>
+      </div>
+    ) : (
+      <>
+        <main
+          data-vods-grid
+          class:list={[
+            "mx-auto grid w-full max-w-7xl grid-cols-1 gap-5 px-4 pb-10 sm:grid-cols-2 md:px-6 lg:grid-cols-3 xl:grid-cols-4 mt-6",
+            watching && "hidden",
+          ]}
+        >
+          {items.map((item) => (
+            <VodCard item={item} base={base} />
+          ))}
+        </main>
+
+        <div
+          data-vods-watch
+          class:list={[
+            "group/vods relative min-h-0 w-full flex-1 flex-col md:flex-row",
+            watching ? "flex" : "hidden",
+          ]}
+        >
+          <div
+            data-video-pane
+            class="group/video relative isolate z-0 w-full shrink-0 aspect-video md:aspect-auto md:h-full md:flex-1 group-data-list-hidden/vods:aspect-auto group-data-list-hidden/vods:min-h-0 group-data-list-hidden/vods:flex-1"
+          >
+            <StreamPlayer vkOid={playing?.vkOid} vkId={playing?.vkId} />
+            <PlayerBadge id="close-vod" side="left" label="Cerrar" />
+            <PlayerBadge
+              side="right"
+              label="Esconder listado"
+              altLabel="Mostrar listado"
+              toggleAttr="data-list-hidden"
+              toggleRoot="[data-vods-watch]"
+            />
+          </div>
+          <aside
+            data-vods-side
+            class="scrollbar-thin min-h-0 w-full flex-1 overflow-y-auto overscroll-contain p-2 md:h-full md:flex-none md:w-85 md:p-3 group-data-list-hidden/vods:hidden"
+            style="padding-bottom: env(safe-area-inset-bottom)"
+          >
+            <div class="flex flex-col gap-1">
+              {items.map((item) => (
+                <VodCard
+                  item={item}
+                  base={base}
+                  compact
+                  current={playing?.vkId === String(item.id) && playing?.vkOid === String(item.owner_id)}
+                />
+              ))}
+            </div>
+          </aside>
+        </div>
+      </>
+    )}
+
+    <script>
+      import { vodWatchPath, vodsPath } from "../lib/streaming";
+      import { resetPlayerBadges } from "../lib/playerOverlay";
+      import { swapVkFrame, unloadVkFrame } from "../lib/vkFrame";
+
+      function toMs(unix: number) {
+        return unix < 1e12 ? unix * 1000 : unix;
+      }
+
+      function formatUserDate(unix: number) {
+        const ms = toMs(unix);
+        const now = Date.now();
+        const diffSec = Math.round((ms - now) / 1000);
+        const abs = Math.abs(diffSec);
+        const locale = document.documentElement.lang || navigator.language || "es";
+        const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+        if (abs < 45) return rtf.format(Math.round(diffSec), "second");
+        if (abs < 45 * 60) return rtf.format(Math.round(diffSec / 60), "minute");
+        if (abs < 36 * 3600) return rtf.format(Math.round(diffSec / 3600), "hour");
+        if (abs < 10 * 86400) return rtf.format(Math.round(diffSec / 86400), "day");
+        if (abs < 40 * 86400) return rtf.format(Math.round(diffSec / 86400 / 7), "week");
+        return new Intl.DateTimeFormat(locale, {
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        }).format(new Date(ms));
+      }
+
+      function paintDates() {
+        for (const el of document.querySelectorAll<HTMLTimeElement>("time[data-unix]")) {
+          const unix = Number(el.dataset.unix);
+          if (!Number.isFinite(unix)) continue;
+          const date = new Date(toMs(unix));
+          el.dateTime = date.toISOString();
+          el.textContent = formatUserDate(unix);
+          el.title = new Intl.DateTimeFormat(
+            document.documentElement.lang || navigator.language || "es",
+            { dateStyle: "full", timeStyle: "short" },
+          ).format(date);
+        }
+      }
+
+      paintDates();
+
+      const page = document.querySelector("[data-vods-page]");
+      const grid = document.querySelector("[data-vods-grid]");
+      const watch = document.querySelector("[data-vods-watch]");
+      const note = document.querySelector("[data-vods-note]");
+      const header = document.querySelector("[data-vods-header]");
+      const pane = document.querySelector("[data-vods-watch] [data-video-pane]");
+      const closeBtn = document.getElementById("close-vod");
+
+      if (!(page instanceof HTMLElement) || !(watch instanceof HTMLElement) || !(pane instanceof HTMLElement)) {
+        // empty state
+      } else {
+        const syncCurrent = (oid: string, vid: string) => {
+          for (const link of document.querySelectorAll<HTMLAnchorElement>("[data-vod-link]")) {
+            const on = Boolean(oid && vid && link.dataset.oid === oid && link.dataset.vid === vid);
+            link.classList.toggle("bg-white/10", on);
+            link.classList.toggle("ring-1", on);
+            link.classList.toggle("ring-[#9147ff]/50", on);
+          }
+        };
+
+        const setWatchLayout = (on: boolean) => {
+          page.dataset.mode = on ? "watch" : "grid";
+          page.classList.toggle("flex", on);
+          page.classList.toggle("h-dvh", on);
+          page.classList.toggle("flex-col", on);
+          page.classList.toggle("overflow-hidden", on);
+          page.classList.toggle("min-h-dvh", !on);
+          grid?.classList.toggle("hidden", on);
+          watch.classList.toggle("hidden", !on);
+          watch.classList.toggle("flex", on);
+          note?.classList.toggle("hidden", on);
+          header?.classList.toggle("hidden", on);
+          header?.classList.toggle("mx-auto", !on);
+          header?.classList.toggle("max-w-7xl", !on);
+        };
+
+        const base = page.dataset.base ?? "";
+
+        const openWatch = (oid: string, vid: string, push: boolean) => {
+          const already = page.dataset.mode === "watch";
+          swapVkFrame(pane, oid, vid);
+          if (!already) {
+            watch.removeAttribute("data-list-hidden");
+            resetPlayerBadges(watch);
+            setWatchLayout(true);
+          }
+          syncCurrent(oid, vid);
+          const next = vodWatchPath(base, oid, vid);
+          if (push && `${location.pathname}${location.search}` !== next) {
+            history.pushState({ vod: { oid, vid } }, "", next);
+          }
+        };
+
+        const closeWatch = (push: boolean) => {
+          unloadVkFrame(pane);
+          watch.removeAttribute("data-list-hidden");
+          resetPlayerBadges(watch);
+          setWatchLayout(false);
+          syncCurrent("", "");
+          if (push && location.search) {
+            history.pushState({ vod: null }, "", vodsPath(base));
+          }
+        };
+
+        document.addEventListener("click", (event) => {
+          const link = (event.target as Element | null)?.closest?.("[data-vod-link]");
+          if (!(link instanceof HTMLAnchorElement)) return;
+          const oid = link.dataset.oid;
+          const vid = link.dataset.vid;
+          if (!oid || !vid) return;
+          event.preventDefault();
+          openWatch(oid, vid, true);
+        });
+
+        closeBtn?.addEventListener("click", () => closeWatch(true));
+
+        window.addEventListener("popstate", () => {
+          const params = new URLSearchParams(location.search);
+          const raw = params.get("id");
+          if (!raw) {
+            closeWatch(false);
+            return;
+          }
+          const parts = raw.match(/^(-?\d+)_(\d+)$/);
+          if (parts) {
+            openWatch(parts[1], parts[2], false);
+            return;
+          }
+          const match = document.querySelector<HTMLAnchorElement>(`[data-vod-link][data-vid="${CSS.escape(raw)}"]`);
+          if (match?.dataset.oid && match.dataset.vid) {
+            openWatch(match.dataset.oid, match.dataset.vid, false);
+          } else {
+            closeWatch(false);
+          }
+        });
+      }
+    </script>
+  </body>
+</html>
